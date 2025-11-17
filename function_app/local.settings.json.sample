@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "QUALYS_API_URL": "https://qualysapi.qualys.com",
+    "QUALYS_USERNAME": "your-qualys-username",
+    "QUALYS_PASSWORD": "your-qualys-password",
+    "QUALYS_SCANNER_APPLIANCE_ID": "",
+    "SCAN_TIMEOUT": "1800",
+    "STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=youraccountname;AccountKey=youraccountkey;EndpointSuffix=core.windows.net",
+    "NOTIFICATION_EMAIL": "security@example.com",
+    "NOTIFY_SEVERITY_THRESHOLD": "HIGH"
+  }
+}
