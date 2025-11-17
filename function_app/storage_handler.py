@@ -1,6 +1,7 @@
 """
 Azure Storage handler for scan results and metadata
 """
+import os
 import json
 import logging
 from datetime import datetime, timedelta
@@ -137,18 +138,21 @@ class StorageHandler:
         except Exception as e:
             logging.error(f'Error saving error info: {str(e)}')
 
-    def is_recently_scanned(self, image: str, hours: int = 24) -> bool:
+    def is_recently_scanned(self, image: str, hours: Optional[int] = None) -> bool:
         """
         Check if an image was scanned recently
 
         Args:
             image: Image name
-            hours: Number of hours to consider as "recent"
+            hours: Number of hours to consider as "recent" (defaults to SCAN_CACHE_HOURS env var or 24)
 
         Returns:
             True if image was scanned within the specified time period
         """
         try:
+            if hours is None:
+                hours = int(os.environ.get('SCAN_CACHE_HOURS', '24'))
+
             table_client = self.table_service.get_table_client(self.metadata_table)
             partition_key = self._sanitize_name(image)
 
@@ -167,46 +171,6 @@ class StorageHandler:
         except Exception as e:
             logging.warning(f'Error checking recent scans: {str(e)}')
             return False
-
-    def get_latest_scan(self, image: str) -> Optional[Dict]:
-        """
-        Get the latest scan result for an image
-
-        Args:
-            image: Image name
-
-        Returns:
-            Latest scan result or None
-        """
-        try:
-            table_client = self.table_service.get_table_client(self.metadata_table)
-            partition_key = self._sanitize_name(image)
-
-            # Query all scans for this image
-            query_filter = f"PartitionKey eq '{partition_key}'"
-            entities = list(table_client.query_entities(query_filter=query_filter))
-
-            if not entities:
-                return None
-
-            # Sort by timestamp and get latest
-            latest = sorted(entities, key=lambda x: x.get('Timestamp', ''), reverse=True)[0]
-
-            # Retrieve full result from blob
-            blob_name = latest.get('BlobPath')
-            if blob_name:
-                blob_client = self.blob_service.get_blob_client(
-                    container=self.results_container,
-                    blob=blob_name
-                )
-                blob_data = blob_client.download_blob().readall()
-                return json.loads(blob_data)
-
-            return dict(latest)
-
-        except Exception as e:
-            logging.error(f'Error retrieving latest scan: {str(e)}')
-            return None
 
     def _sanitize_name(self, name: str) -> str:
         """

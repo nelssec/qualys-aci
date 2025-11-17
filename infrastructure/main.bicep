@@ -1,55 +1,34 @@
-// Main Bicep template for Qualys ACI/ACA Scanner deployment
-// This template deploys all required Azure resources for the scanning solution
-
-@description('Location for all resources')
 param location string = resourceGroup().location
-
-@description('Name prefix for all resources')
 param namePrefix string = 'qualys-scanner'
 
-@description('Qualys API URL')
-@secure()
-param qualysApiUrl string
+param qualysPod string
 
-@description('Qualys API Username')
 @secure()
-param qualysUsername string
+param qualysAccessToken string
 
-@description('Qualys API Password')
-@secure()
-param qualysPassword string
-
-@description('Email for security notifications')
 param notificationEmail string = ''
 
-@description('Severity threshold for notifications (CRITICAL or HIGH)')
 @allowed([
   'CRITICAL'
   'HIGH'
 ])
 param notifySeverityThreshold string = 'HIGH'
 
-@description('Hours between duplicate scans of the same image')
 param scanCacheHours int = 24
 
-@description('Function App SKU')
 @allowed([
-  'Y1'  // Consumption
-  'EP1' // Elastic Premium
+  'Y1'
+  'EP1'
   'EP2'
   'EP3'
 ])
 param functionAppSku string = 'Y1'
-
-// Variables
 var storageAccountName = '${replace(namePrefix, '-', '')}${uniqueString(resourceGroup().id)}'
 var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
 var keyVaultName = '${namePrefix}-kv-${uniqueString(resourceGroup().id)}'
 var eventGridTopicName = '${namePrefix}-events-${uniqueString(resourceGroup().id)}'
-
-// Storage Account for scan results and function app
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -76,7 +55,6 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
 }
 
-// Blob containers
 resource scanResultsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   name: '${storageAccountName}/default/scan-results'
   dependsOn: [
@@ -87,7 +65,6 @@ resource scanResultsContainer 'Microsoft.Storage/storageAccounts/blobServices/co
   }
 }
 
-// Table for metadata
 resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
   name: '${storageAccountName}/default'
   dependsOn: [
@@ -102,7 +79,6 @@ resource scanMetadataTable 'Microsoft.Storage/storageAccounts/tableServices/tabl
   ]
 }
 
-// Application Insights
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
@@ -115,7 +91,6 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// Key Vault for secrets
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
@@ -138,32 +113,14 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// Store Qualys credentials in Key Vault
-resource qualysApiUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource qualysAccessTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
-  name: 'QualysApiUrl'
+  name: 'QualysAccessToken'
   properties: {
-    value: qualysApiUrl
+    value: qualysAccessToken
   }
 }
 
-resource qualysUsernameSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'QualysUsername'
-  properties: {
-    value: qualysUsername
-  }
-}
-
-resource qualysPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'QualysPassword'
-  properties: {
-    value: qualysPassword
-  }
-}
-
-// App Service Plan for Function App
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: appServicePlanName
   location: location
@@ -173,11 +130,10 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   }
   kind: 'functionapp'
   properties: {
-    reserved: true // Linux
+    reserved: true
   }
 }
 
-// Function App
 resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
   name: functionAppName
   location: location
@@ -221,16 +177,12 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: appInsights.properties.ConnectionString
         }
         {
-          name: 'QUALYS_API_URL'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysApiUrlSecret.properties.secretUri})'
+          name: 'QUALYS_POD'
+          value: qualysPod
         }
         {
-          name: 'QUALYS_USERNAME'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysUsernameSecret.properties.secretUri})'
-        }
-        {
-          name: 'QUALYS_PASSWORD'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysPasswordSecret.properties.secretUri})'
+          name: 'QUALYS_ACCESS_TOKEN'
+          value: '@Microsoft.KeyVault(SecretUri=${qualysAccessTokenSecret.properties.secretUri})'
         }
         {
           name: 'AZURE_SUBSCRIPTION_ID'
@@ -264,6 +216,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'SCAN_CACHE_HOURS'
           value: string(scanCacheHours)
         }
+        {
+          name: 'SCAN_TIMEOUT'
+          value: '1800'
+        }
       ]
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
@@ -272,29 +228,26 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
   }
 }
 
-// Grant Function App access to Key Vault
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVault.id, functionApp.id, 'Key Vault Secrets User')
   scope: keyVault
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// Grant Function App Contributor role to create/delete ACI containers for scanning
 resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(resourceGroup().id, functionApp.id, 'Contributor')
   scope: resourceGroup()
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// Event Grid System Topic for ACI events
 resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
   name: '${namePrefix}-aci-topic'
   location: location
@@ -304,7 +257,6 @@ resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview'
   }
 }
 
-// Event Grid subscription for ACI deployments
 resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = {
   parent: aciEventGridTopic
   name: 'aci-container-deployments'
@@ -346,7 +298,6 @@ resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
   }
 }
 
-// Event Grid subscription for ACA deployments
 resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = {
   parent: aciEventGridTopic
   name: 'aca-container-deployments'
@@ -388,7 +339,6 @@ resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
   }
 }
 
-// Outputs
 output functionAppName string = functionApp.name
 output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
 output storageAccountName string = storageAccount.name

@@ -12,7 +12,7 @@ from azure.mgmt.containerinstance import ContainerInstanceManagementClient
 from azure.mgmt.containerinstance.models import (
     ContainerGroup, Container, ContainerGroupRestartPolicy,
     ResourceRequirements, ResourceRequests, EnvironmentVariable,
-    ImageRegistryCredential, OperatingSystemTypes
+    OperatingSystemTypes
 )
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import HttpResponseError
@@ -24,10 +24,17 @@ class QScannerACI:
     Uses the official qualys/qscanner Docker image from Docker Hub
     """
 
-    def __init__(self):
-        """Initialize ACI client with managed identity"""
+    def __init__(self, subscription_id: Optional[str] = None):
+        """
+        Initialize ACI client with managed identity
+
+        Args:
+            subscription_id: Optional subscription ID for scan containers.
+                           If not provided, uses AZURE_SUBSCRIPTION_ID env var.
+                           This allows scanning across multiple subscriptions.
+        """
         self.credential = DefaultAzureCredential()
-        self.subscription_id = os.environ['AZURE_SUBSCRIPTION_ID']
+        self.subscription_id = subscription_id or os.environ['AZURE_SUBSCRIPTION_ID']
         self.resource_group = os.environ.get('QSCANNER_RESOURCE_GROUP', 'qualys-scanner-rg')
         self.location = os.environ.get('AZURE_REGION', 'eastus')
 
@@ -38,8 +45,8 @@ class QScannerACI:
 
         # qscanner configuration
         self.qscanner_image = os.environ.get('QSCANNER_IMAGE', 'qualys/qscanner:latest')
-        self.qualys_username = os.environ.get('QUALYS_USERNAME')
-        self.qualys_password = os.environ.get('QUALYS_PASSWORD')
+        self.qualys_pod = os.environ.get('QUALYS_POD')
+        self.qualys_access_token = os.environ.get('QUALYS_ACCESS_TOKEN')
         self.scan_timeout = int(os.environ.get('SCAN_TIMEOUT', '1800'))
 
     def scan_image(self, registry: str, repository: str, tag: str = 'latest',
@@ -122,8 +129,7 @@ class QScannerACI:
 
         # Environment variables for qscanner
         env_vars = [
-            EnvironmentVariable(name='QUALYS_USERNAME', secure_value=self.qualys_username),
-            EnvironmentVariable(name='QUALYS_PASSWORD', secure_value=self.qualys_password),
+            EnvironmentVariable(name='QUALYS_ACCESS_TOKEN', secure_value=self.qualys_access_token),
         ]
 
         # Container configuration
@@ -300,17 +306,20 @@ class QScannerACI:
         Returns:
             Command as list
         """
-        cmd = [
-            '/bin/sh',
-            '-c',
-            f'qscanner --image "{image_id}" --output-format json --tag "image={image_id}" --tag "scan_time={datetime.utcnow().isoformat()}"'
+        cmd_parts = [
+            'qscanner',
+            'image',
+            image_id,
+            '--pod', self.qualys_pod,
+            '--output-format', 'json'
         ]
 
         # Add custom tags
         if custom_tags:
-            tag_args = ' '.join([f'--tag "{k}={v}"' for k, v in custom_tags.items()])
-            cmd[2] += f' {tag_args}'
+            for key, value in custom_tags.items():
+                cmd_parts.extend(['--tag', f'{key}={value}'])
 
+        cmd = ['/bin/sh', '-c', ' '.join(cmd_parts)]
         return cmd
 
     def _parse_qscanner_output(self, output: str) -> Dict:
