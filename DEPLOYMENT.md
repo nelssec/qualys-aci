@@ -351,16 +351,12 @@ az monitor metrics list \
 Check ACI quota:
 
 ```bash
-az vm list-usage \
+az container list-usage \
   --location eastus \
-  --query "[?name.value=='containerGroups'].{Current:currentValue, Limit:limit}"
+  --output table
 ```
 
-Request quota increase if needed:
-
-```bash
-# Open support ticket via Azure Portal for ACI quota increase
-```
+Request quota increase if needed via Azure Portal support ticket.
 
 ## Security Hardening
 
