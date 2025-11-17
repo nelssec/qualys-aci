@@ -27,63 +27,84 @@ Event Grid captures ACI/ACA deployment events and triggers an Azure Function. Th
 
 ### Prerequisites
 
+- Azure CLI 2.50.0+
 - Azure subscription with Contributor role
-- Azure CLI
 - Qualys account credentials
 - Python 3.11 (for local development)
-- For tenant-wide: Management Group read permissions
+- For tenant-wide: Management Group permissions
 
 ### Option 1: Single Subscription
 
-Monitor container deployments in one subscription:
+Monitor container deployments in one subscription.
+
+Configure `infrastructure/main.bicepparam` with your settings, then:
 
 ```bash
 cd infrastructure
 
-export QUALYS_USERNAME="your-username"
-export QUALYS_PASSWORD="your-password"
+# Create resource group
+az group create \
+  --name qualys-scanner-rg \
+  --location eastus
 
-./deploy.sh \
-  -s your-subscription-id \
-  -r qualys-scanner-rg \
-  -l eastus \
-  -n "$QUALYS_USERNAME" \
-  -w "$QUALYS_PASSWORD" \
-  -e security@example.com
+# Deploy infrastructure
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file main.bicep \
+  --parameters main.bicepparam \
+  --parameters qualysUsername='your-username' \
+  --parameters qualysPassword='your-password'
+
+# Deploy function code
+cd ../function_app
+FUNCTION_APP=$(az deployment group show \
+  --resource-group qualys-scanner-rg \
+  --name main \
+  --query properties.outputs.functionAppName.value -o tsv)
+func azure functionapp publish $FUNCTION_APP
 ```
 
 ### Option 2: Tenant-Wide Monitoring
 
-Monitor ALL subscriptions in your tenant:
+Monitor ALL subscriptions in your tenant.
 
 ```bash
+# Step 1: Deploy Function App (same as Option 1)
 cd infrastructure
+az group create --name qualys-scanner-rg --location eastus
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file main.bicep \
+  --parameters main.bicepparam \
+  --parameters qualysUsername='your-username' \
+  --parameters qualysPassword='your-password'
 
-# Step 1: Deploy Function App to a central subscription
-./deploy.sh \
-  -s central-subscription-id \
-  -r qualys-scanner-rg \
-  -l eastus \
-  -n "$QUALYS_USERNAME" \
-  -w "$QUALYS_PASSWORD" \
-  -e security@example.com
+# Step 2: Deploy function code
+cd ../function_app
+FUNCTION_APP=$(az deployment group show \
+  --resource-group qualys-scanner-rg \
+  --name main \
+  --query properties.outputs.functionAppName.value -o tsv)
+func azure functionapp publish $FUNCTION_APP
 
-# Step 2: Get tenant root management group
+# Step 3: Get tenant root management group
 TENANT_ROOT=$(az account management-group list \
   --query "[?displayName=='Tenant Root Group'].name" -o tsv)
 
-# Step 3: Deploy tenant-wide Event Grid subscriptions
-./deploy-tenant-wide.sh \
-  -m "$TENANT_ROOT" \
-  -s central-subscription-id \
-  -r qualys-scanner-rg \
-  -f qualys-scanner-func-xxxxx
+# Step 4: Configure and deploy tenant-wide Event Grid
+cd ../infrastructure
+# Edit tenant-wide.bicepparam with your function app details
+az deployment mg create \
+  --management-group-id $TENANT_ROOT \
+  --location eastus \
+  --template-file tenant-wide.bicep \
+  --parameters tenant-wide.bicepparam
 ```
 
-This monitors container deployments across ALL subscriptions in the tenant.
+See `DEPLOYMENT.md` for complete deployment guide.
 
 The deployment creates:
-- Function App (Python 3.11, Consumption plan)
+- Function App (Python 3.11, Consumption or Premium plan)
 - Storage account for scan results
 - Key Vault for credentials
 - Application Insights
