@@ -28,6 +28,11 @@ def main(event: func.EventGridEvent):
         logging.info(f'Event Type: {event_type}')
         logging.info(f'Subject: {subject}')
 
+        # Extract subscription ID from event (for tenant-wide deployments)
+        event_subscription_id = event_data.get('subscriptionId')
+        if event_subscription_id:
+            logging.info(f'Event from subscription: {event_subscription_id}')
+
         # Determine if this is ACI or ACA deployment
         if 'Microsoft.ContainerInstance/containerGroups' in subject:
             container_type = 'ACI'
@@ -47,7 +52,8 @@ def main(event: func.EventGridEvent):
         logging.info(f'Found {len(images)} container images to scan')
 
         # Initialize qscanner (using ACI for on-demand scanning)
-        scanner = QScannerACI()
+        # Pass event subscription ID to allow cross-subscription scanning
+        scanner = QScannerACI(subscription_id=event_subscription_id)
 
         # Initialize storage handler for results
         storage = StorageHandler(

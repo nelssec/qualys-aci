@@ -31,8 +31,11 @@ Event Grid captures ACI/ACA deployment events and triggers an Azure Function. Th
 - Azure CLI
 - Qualys account credentials
 - Python 3.11 (for local development)
+- For tenant-wide: Management Group read permissions
 
-### Deploy
+### Option 1: Single Subscription
+
+Monitor container deployments in one subscription:
 
 ```bash
 cd infrastructure
@@ -49,12 +52,42 @@ export QUALYS_PASSWORD="your-password"
   -e security@example.com
 ```
 
+### Option 2: Tenant-Wide Monitoring
+
+Monitor ALL subscriptions in your tenant:
+
+```bash
+cd infrastructure
+
+# Step 1: Deploy Function App to a central subscription
+./deploy.sh \
+  -s central-subscription-id \
+  -r qualys-scanner-rg \
+  -l eastus \
+  -n "$QUALYS_USERNAME" \
+  -w "$QUALYS_PASSWORD" \
+  -e security@example.com
+
+# Step 2: Get tenant root management group
+TENANT_ROOT=$(az account management-group list \
+  --query "[?displayName=='Tenant Root Group'].name" -o tsv)
+
+# Step 3: Deploy tenant-wide Event Grid subscriptions
+./deploy-tenant-wide.sh \
+  -m "$TENANT_ROOT" \
+  -s central-subscription-id \
+  -r qualys-scanner-rg \
+  -f qualys-scanner-func-xxxxx
+```
+
+This monitors container deployments across ALL subscriptions in the tenant.
+
 The deployment creates:
 - Function App (Python 3.11, Consumption plan)
 - Storage account for scan results
 - Key Vault for credentials
 - Application Insights
-- Event Grid subscriptions for ACI and ACA events
+- Event Grid subscriptions (subscription or management group scoped)
 - RBAC assignments (Key Vault access, Contributor for ACI management)
 
 ### Configuration

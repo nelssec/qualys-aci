@@ -24,10 +24,17 @@ class QScannerACI:
     Uses the official qualys/qscanner Docker image from Docker Hub
     """
 
-    def __init__(self):
-        """Initialize ACI client with managed identity"""
+    def __init__(self, subscription_id: Optional[str] = None):
+        """
+        Initialize ACI client with managed identity
+
+        Args:
+            subscription_id: Optional subscription ID for scan containers.
+                           If not provided, uses AZURE_SUBSCRIPTION_ID env var.
+                           This allows scanning across multiple subscriptions.
+        """
         self.credential = DefaultAzureCredential()
-        self.subscription_id = os.environ['AZURE_SUBSCRIPTION_ID']
+        self.subscription_id = subscription_id or os.environ['AZURE_SUBSCRIPTION_ID']
         self.resource_group = os.environ.get('QSCANNER_RESOURCE_GROUP', 'qualys-scanner-rg')
         self.location = os.environ.get('AZURE_REGION', 'eastus')
 
