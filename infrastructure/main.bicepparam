@@ -2,7 +2,7 @@ using './main.bicep'
 
 param location = 'eastus'
 param namePrefix = 'qualys-scanner'
-param qualysPod = 'US2'
+param qualysPod = ''
 param qualysAccessToken = ''
 param notificationEmail = ''
 param notifySeverityThreshold = 'HIGH'
