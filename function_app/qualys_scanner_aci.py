@@ -12,7 +12,7 @@ from azure.mgmt.containerinstance import ContainerInstanceManagementClient
 from azure.mgmt.containerinstance.models import (
     ContainerGroup, Container, ContainerGroupRestartPolicy,
     ResourceRequirements, ResourceRequests, EnvironmentVariable,
-    ImageRegistryCredential, OperatingSystemTypes
+    OperatingSystemTypes
 )
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import HttpResponseError
@@ -45,6 +45,7 @@ class QScannerACI:
 
         # qscanner configuration
         self.qscanner_image = os.environ.get('QSCANNER_IMAGE', 'qualys/qscanner:latest')
+        self.qualys_api_url = os.environ.get('QUALYS_API_URL')
         self.qualys_username = os.environ.get('QUALYS_USERNAME')
         self.qualys_password = os.environ.get('QUALYS_PASSWORD')
         self.scan_timeout = int(os.environ.get('SCAN_TIMEOUT', '1800'))
@@ -132,6 +133,9 @@ class QScannerACI:
             EnvironmentVariable(name='QUALYS_USERNAME', secure_value=self.qualys_username),
             EnvironmentVariable(name='QUALYS_PASSWORD', secure_value=self.qualys_password),
         ]
+
+        if self.qualys_api_url:
+            env_vars.append(EnvironmentVariable(name='QUALYS_API_URL', value=self.qualys_api_url))
 
         # Container configuration
         container = Container(

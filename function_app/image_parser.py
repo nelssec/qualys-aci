@@ -2,7 +2,6 @@
 Container image name parser
 Handles various image name formats from different registries
 """
-import re
 from typing import Dict
 
 
@@ -80,43 +79,3 @@ class ImageParser:
             'full_name': full_name,
             'original': image_name if not digest else f'{image_name}@{digest}'
         }
-
-    @staticmethod
-    def is_azure_registry(registry: str) -> bool:
-        """
-        Check if registry is an Azure Container Registry
-
-        Args:
-            registry: Registry hostname
-
-        Returns:
-            True if Azure Container Registry
-        """
-        return registry.endswith('.azurecr.io')
-
-    @staticmethod
-    def is_microsoft_registry(registry: str) -> bool:
-        """
-        Check if registry is a Microsoft Container Registry
-
-        Args:
-            registry: Registry hostname
-
-        Returns:
-            True if Microsoft Container Registry
-        """
-        return registry in ['mcr.microsoft.com', 'mcr.microsoft.azure.com']
-
-    @staticmethod
-    def normalize_image_name(image_name: str) -> str:
-        """
-        Normalize image name to fully qualified format
-
-        Args:
-            image_name: Image name in any format
-
-        Returns:
-            Fully qualified image name
-        """
-        parsed = ImageParser.parse(image_name)
-        return parsed['full_name']

@@ -240,6 +240,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'SCAN_CACHE_HOURS'
           value: string(scanCacheHours)
         }
+        {
+          name: 'SCAN_TIMEOUT'
+          value: '1800'
+        }
       ]
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
