@@ -41,25 +41,36 @@ Results Storage & Logging
    - Azure Storage for scan results
    - Alert configuration for failed scans
 
-## Deployment Methods
+## Scanning Approach
 
-### Method 1: Qualys Cloud API (Recommended)
-Best for: Organizations using Qualys Cloud Platform
-- Direct API integration
-- No additional infrastructure
-- Fastest deployment
+This solution uses the official **`qualys/qscanner` Docker image** for on-demand scanning:
 
-### Method 2: Self-Hosted qscanner
-Best for: Air-gapped or highly regulated environments
-- Deploy qscanner on Azure VM or ACI
-- Full control over scanning infrastructure
-- Network isolation support
+### On-Demand ACI Scanner (Recommended) ⭐
 
-### Method 3: Qualys Container Sensor
-Best for: Runtime security monitoring
-- Deploy sensors alongside containers
-- Continuous monitoring
-- Advanced threat detection
+When a container is deployed:
+1. Azure Function creates a temporary ACI container with `qualys/qscanner` image
+2. qscanner container scans the deployed image
+3. Results are retrieved from container logs
+4. Container is automatically deleted
+
+**Benefits:**
+- 91% cost savings vs always-on VM (~$7/month vs $80/month)
+- Zero maintenance - official Docker image auto-updated
+- Serverless - only pay for actual scan time (~$0.001 per scan)
+- Automatic scaling - unlimited concurrent scans
+- No infrastructure management
+
+### Alternative: VM with qscanner
+
+For very high scan volumes (>1000/day):
+- Deploy qscanner on dedicated Azure VM
+- Always warm, no cold start
+- See `QSCANNER_SETUP.md` for VM deployment
+
+**When to use VM:**
+- Extremely high scan frequency
+- Sub-second scan latency required
+- Air-gapped/offline environments
 
 ## Quick Start
 

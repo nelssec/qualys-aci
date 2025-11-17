@@ -6,7 +6,7 @@ import json
 import logging
 import azure.functions as func
 from datetime import datetime
-from ..qualys_scanner_qscanner import QScanner
+from ..qualys_scanner_aci import QScannerACI
 from ..image_parser import ImageParser
 from ..storage_handler import StorageHandler
 
@@ -46,12 +46,8 @@ def main(event: func.EventGridEvent):
 
         logging.info(f'Found {len(images)} container images to scan')
 
-        # Initialize qscanner
-        scanner = QScanner(
-            qscanner_path=os.environ.get('QSCANNER_PATH', '/usr/local/bin/qscanner'),
-            qualys_username=os.environ.get('QUALYS_USERNAME'),
-            qualys_password=os.environ.get('QUALYS_PASSWORD')
-        )
+        # Initialize qscanner (using ACI for on-demand scanning)
+        scanner = QScannerACI()
 
         # Initialize storage handler for results
         storage = StorageHandler(

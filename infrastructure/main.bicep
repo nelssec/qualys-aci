@@ -233,6 +233,22 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: '@Microsoft.KeyVault(SecretUri=${qualysPasswordSecret.properties.secretUri})'
         }
         {
+          name: 'AZURE_SUBSCRIPTION_ID'
+          value: subscription().subscriptionId
+        }
+        {
+          name: 'QSCANNER_RESOURCE_GROUP'
+          value: resourceGroup().name
+        }
+        {
+          name: 'AZURE_REGION'
+          value: location
+        }
+        {
+          name: 'QSCANNER_IMAGE'
+          value: 'qualys/qscanner:latest'
+        }
+        {
           name: 'STORAGE_CONNECTION_STRING'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
@@ -262,6 +278,17 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Grant Function App Contributor role to create/delete ACI containers for scanning
+resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, functionApp.id, 'Contributor')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
