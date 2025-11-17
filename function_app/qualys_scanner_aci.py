@@ -45,9 +45,8 @@ class QScannerACI:
 
         # qscanner configuration
         self.qscanner_image = os.environ.get('QSCANNER_IMAGE', 'qualys/qscanner:latest')
-        self.qualys_api_url = os.environ.get('QUALYS_API_URL')
-        self.qualys_username = os.environ.get('QUALYS_USERNAME')
-        self.qualys_password = os.environ.get('QUALYS_PASSWORD')
+        self.qualys_pod = os.environ.get('QUALYS_POD')
+        self.qualys_access_token = os.environ.get('QUALYS_ACCESS_TOKEN')
         self.scan_timeout = int(os.environ.get('SCAN_TIMEOUT', '1800'))
 
     def scan_image(self, registry: str, repository: str, tag: str = 'latest',
@@ -130,12 +129,8 @@ class QScannerACI:
 
         # Environment variables for qscanner
         env_vars = [
-            EnvironmentVariable(name='QUALYS_USERNAME', secure_value=self.qualys_username),
-            EnvironmentVariable(name='QUALYS_PASSWORD', secure_value=self.qualys_password),
+            EnvironmentVariable(name='QUALYS_ACCESS_TOKEN', secure_value=self.qualys_access_token),
         ]
-
-        if self.qualys_api_url:
-            env_vars.append(EnvironmentVariable(name='QUALYS_API_URL', value=self.qualys_api_url))
 
         # Container configuration
         container = Container(
@@ -311,17 +306,20 @@ class QScannerACI:
         Returns:
             Command as list
         """
-        cmd = [
-            '/bin/sh',
-            '-c',
-            f'qscanner --image "{image_id}" --output-format json --tag "image={image_id}" --tag "scan_time={datetime.utcnow().isoformat()}"'
+        cmd_parts = [
+            'qscanner',
+            'image',
+            image_id,
+            '--pod', self.qualys_pod,
+            '--output-format', 'json'
         ]
 
         # Add custom tags
         if custom_tags:
-            tag_args = ' '.join([f'--tag "{k}={v}"' for k, v in custom_tags.items()])
-            cmd[2] += f' {tag_args}'
+            for key, value in custom_tags.items():
+                cmd_parts.extend(['--tag', f'{key}={value}'])
 
+        cmd = ['/bin/sh', '-c', ' '.join(cmd_parts)]
         return cmd
 
     def _parse_qscanner_output(self, output: str) -> Dict:

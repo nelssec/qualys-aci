@@ -1,14 +1,10 @@
 param location string = resourceGroup().location
 param namePrefix string = 'qualys-scanner'
 
-@secure()
-param qualysApiUrl string
+param qualysPod string
 
 @secure()
-param qualysUsername string
-
-@secure()
-param qualysPassword string
+param qualysAccessToken string
 
 param notificationEmail string = ''
 
@@ -117,27 +113,11 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource qualysApiUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource qualysAccessTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
-  name: 'QualysApiUrl'
+  name: 'QualysAccessToken'
   properties: {
-    value: qualysApiUrl
-  }
-}
-
-resource qualysUsernameSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'QualysUsername'
-  properties: {
-    value: qualysUsername
-  }
-}
-
-resource qualysPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'QualysPassword'
-  properties: {
-    value: qualysPassword
+    value: qualysAccessToken
   }
 }
 
@@ -197,16 +177,12 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: appInsights.properties.ConnectionString
         }
         {
-          name: 'QUALYS_API_URL'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysApiUrlSecret.properties.secretUri})'
+          name: 'QUALYS_POD'
+          value: qualysPod
         }
         {
-          name: 'QUALYS_USERNAME'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysUsernameSecret.properties.secretUri})'
-        }
-        {
-          name: 'QUALYS_PASSWORD'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysPasswordSecret.properties.secretUri})'
+          name: 'QUALYS_ACCESS_TOKEN'
+          value: '@Microsoft.KeyVault(SecretUri=${qualysAccessTokenSecret.properties.secretUri})'
         }
         {
           name: 'AZURE_SUBSCRIPTION_ID'

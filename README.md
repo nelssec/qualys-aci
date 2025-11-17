@@ -52,8 +52,7 @@ az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file main.bicep \
   --parameters main.bicepparam \
-  --parameters qualysUsername='your-username' \
-  --parameters qualysPassword='your-password'
+  --parameters qualysAccessToken='your-access-token'
 
 # Deploy function code
 cd ../function_app
@@ -76,8 +75,7 @@ az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file main.bicep \
   --parameters main.bicepparam \
-  --parameters qualysUsername='your-username' \
-  --parameters qualysPassword='your-password'
+  --parameters qualysAccessToken='your-access-token'
 
 # Step 2: Deploy function code
 cd ../function_app
@@ -117,8 +115,8 @@ Environment variables set by deployment:
 
 | Variable | Description |
 |----------|-------------|
-| QUALYS_USERNAME | Qualys account username (from Key Vault) |
-| QUALYS_PASSWORD | Qualys account password (from Key Vault) |
+| QUALYS_POD | Qualys platform pod (e.g., US2, EU1) |
+| QUALYS_ACCESS_TOKEN | Qualys API access token (from Key Vault) |
 | AZURE_SUBSCRIPTION_ID | Subscription where scan containers run |
 | QSCANNER_RESOURCE_GROUP | Resource group for scan containers |
 | QSCANNER_IMAGE | Docker image (qualys/qscanner:latest) |
