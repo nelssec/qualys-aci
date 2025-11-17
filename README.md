@@ -1,306 +1,274 @@
-# Qualys Azure Container Scanning for ACI/ACA
+# Qualys Container Scanner for Azure ACI/ACA
 
-Automated container image scanning solution for Azure Container Instances (ACI) and Azure Container Apps (ACA) using Qualys.
+Event-driven container image scanning for Azure Container Instances and Azure Container Apps using Qualys qscanner.
 
-## Architecture Overview
+## Overview
 
-This solution uses an event-driven architecture to automatically scan container images when they're deployed:
+This solution automatically scans container images when they're deployed to ACI or ACA. When a deployment event occurs, an Azure Function spins up a temporary container running qscanner, performs the scan, and stores the results. The scan container is deleted after completion.
+
+### Architecture
 
 ```
-Azure ACI/ACA Deployment
-    ↓
-Azure Event Grid (captures deployment events)
-    ↓
-Azure Function (processes events)
-    ↓
-Qualys Scanner (scans container images)
-    ↓
-Results Storage & Logging
+Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Scan → Store Results
 ```
+
+Event Grid captures ACI/ACA deployment events and triggers an Azure Function. The function creates an Azure Container Instance running the official qualys/qscanner Docker image, which scans the deployed container image. Results are stored in Azure Storage and the scan container is deleted.
 
 ### Components
 
-1. **Azure Event Grid Subscription**
-   - Monitors Azure Resource Manager events
-   - Filters for ACI and ACA container deployments
-   - Routes events to Azure Function
+- Event Grid system topic monitoring resource group events
+- Azure Function with Event Grid trigger
+- On-demand ACI containers running qualys/qscanner
+- Azure Storage for scan results (Blob + Table)
+- Key Vault for Qualys credentials
+- Application Insights for monitoring
 
-2. **Azure Function App**
-   - Receives deployment events
-   - Extracts container image information
-   - Triggers Qualys scans via API
-   - Handles retries and error logging
-
-3. **Qualys Integration**
-   - Uses Qualys Container Security API
-   - Supports both cloud-based and self-hosted qscanner
-   - Stores scan results and compliance status
-
-4. **Monitoring & Storage**
-   - Application Insights for monitoring
-   - Azure Storage for scan results
-   - Alert configuration for failed scans
-
-## Scanning Approach
-
-This solution uses the official **`qualys/qscanner` Docker image** for on-demand scanning:
-
-### On-Demand ACI Scanner (Recommended) ⭐
-
-When a container is deployed:
-1. Azure Function creates a temporary ACI container with `qualys/qscanner` image
-2. qscanner container scans the deployed image
-3. Results are retrieved from container logs
-4. Container is automatically deleted
-
-**Benefits:**
-- 91% cost savings vs always-on VM (~$7/month vs $80/month)
-- Zero maintenance - official Docker image auto-updated
-- Serverless - only pay for actual scan time (~$0.001 per scan)
-- Automatic scaling - unlimited concurrent scans
-- No infrastructure management
-
-### Alternative: VM with qscanner
-
-For very high scan volumes (>1000/day):
-- Deploy qscanner on dedicated Azure VM
-- Always warm, no cold start
-- See `QSCANNER_SETUP.md` for VM deployment
-
-**When to use VM:**
-- Extremely high scan frequency
-- Sub-second scan latency required
-- Air-gapped/offline environments
-
-## Quick Start
+## Deployment
 
 ### Prerequisites
 
-- Azure subscription with Contributor access
-- Azure CLI installed
-- Qualys account with API credentials
-- Python 3.9+ (for local development)
+- Azure subscription with Contributor role
+- Azure CLI
+- Qualys account credentials
+- Python 3.11 (for local development)
 
-### 1. Clone and Configure
-
-```bash
-git clone <repository-url>
-cd qualys-aci
-
-# Copy and configure settings
-cp config/config.sample.json config/config.json
-# Edit config/config.json with your Qualys credentials and Azure settings
-```
-
-### 2. Deploy Infrastructure
+### Deploy
 
 ```bash
 cd infrastructure
-chmod +x deploy.sh
-./deploy.sh -s <subscription-id> -r <resource-group> -l <location>
+
+export QUALYS_USERNAME="your-username"
+export QUALYS_PASSWORD="your-password"
+
+./deploy.sh \
+  -s your-subscription-id \
+  -r qualys-scanner-rg \
+  -l eastus \
+  -n "$QUALYS_USERNAME" \
+  -w "$QUALYS_PASSWORD" \
+  -e security@example.com
 ```
 
-### 3. Configure Event Grid
+The deployment creates:
+- Function App (Python 3.11, Consumption plan)
+- Storage account for scan results
+- Key Vault for credentials
+- Application Insights
+- Event Grid subscriptions for ACI and ACA events
+- RBAC assignments (Key Vault access, Contributor for ACI management)
 
-The deployment script automatically creates:
-- Event Grid subscription for ACI deployments
-- Event Grid subscription for ACA deployments
-- Function App with managed identity
-- Storage account for results
+### Configuration
 
-### 4. Verify Deployment
+Environment variables set by deployment:
 
-```bash
-# Test the function
-cd ../function_app
-python test_function.py
+| Variable | Description |
+|----------|-------------|
+| QUALYS_USERNAME | Qualys account username (from Key Vault) |
+| QUALYS_PASSWORD | Qualys account password (from Key Vault) |
+| AZURE_SUBSCRIPTION_ID | Subscription where scan containers run |
+| QSCANNER_RESOURCE_GROUP | Resource group for scan containers |
+| QSCANNER_IMAGE | Docker image (qualys/qscanner:latest) |
+| SCAN_TIMEOUT | Maximum scan duration (default: 1800s) |
+| STORAGE_CONNECTION_STRING | Azure Storage for results |
+| NOTIFICATION_EMAIL | Email for high-severity alerts |
 
-# Deploy a test container
-az container create --resource-group test-rg --name test-container --image nginx:latest
-```
+## How It Works
 
-## Configuration
+### Scan Process
 
-### Environment Variables
+1. User deploys container to ACI or ACA
+2. Azure Resource Manager emits deployment event
+3. Event Grid routes event to Function App
+4. Function extracts container image details from event
+5. Function creates ACI container with qscanner image
+6. qscanner pulls and scans the target image
+7. Function retrieves scan results from container logs
+8. Results stored in Blob Storage (full JSON) and Table Storage (metadata)
+9. Function deletes scan container
+10. If critical/high vulnerabilities found, alert sent
 
-Configure these in Azure Function App settings or `local.settings.json`:
+### Scan Deduplication
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `QUALYS_API_URL` | Qualys API endpoint (e.g., https://qualysapi.qualys.com) | Yes |
-| `QUALYS_USERNAME` | Qualys API username | Yes |
-| `QUALYS_PASSWORD` | Qualys API password | Yes |
-| `QUALYS_SCANNER_APPLIANCE_ID` | Scanner appliance ID (if using self-hosted) | No |
-| `SCAN_TIMEOUT` | Maximum scan time in seconds (default: 1800) | No |
-| `STORAGE_CONNECTION_STRING` | Azure Storage for results | Yes |
-| `NOTIFICATION_EMAIL` | Email for scan failure alerts | No |
+Images are cached for 24 hours by default. If the same image is deployed multiple times within the cache period, only the first deployment triggers a scan. This prevents duplicate scans and reduces costs.
 
-### Qualys API Configuration
+### Cost Estimate
 
-Edit `config/config.json`:
+Based on 100 container deployments per day:
 
-```json
-{
-  "qualys": {
-    "api_url": "https://qualysapi.qualys.com",
-    "api_version": "v1",
-    "scanner_type": "cloud",
-    "scan_options": {
-      "include_vulnerabilities": true,
-      "include_compliance": true,
-      "severity_threshold": "MEDIUM"
-    }
-  },
-  "azure": {
-    "subscription_id": "your-subscription-id",
-    "resource_groups": ["*"],
-    "event_filters": {
-      "aci": true,
-      "aca": true
-    }
-  },
-  "scanning": {
-    "auto_scan": true,
-    "scan_private_registries": true,
-    "retry_attempts": 3,
-    "notify_on_high_severity": true
-  }
-}
-```
+- ACI scan containers: ~$3/month (2GB RAM, 1 CPU, 2 min avg)
+- Function App (Consumption): ~$2/month
+- Storage: ~$2/month
+- Total: ~$7/month
 
-## Architecture Details
-
-### Event Flow
-
-1. **Container Deployment**: User deploys container to ACI or ACA
-2. **Event Emission**: Azure emits "Microsoft.ContainerInstance/containerGroups/write" or "Microsoft.App/containerApps/write" event
-3. **Event Grid Routing**: Event Grid filters and routes to Function App
-4. **Event Processing**: Function extracts image name, registry, and tags
-5. **Registry Authentication**: Function authenticates to Azure Container Registry (if needed)
-6. **Scan Trigger**: Function calls Qualys API to initiate scan
-7. **Result Processing**: Function receives and stores scan results
-8. **Alerting**: Function sends alerts if vulnerabilities exceed threshold
-
-### Security Considerations
-
-- **Managed Identity**: Function uses Azure Managed Identity to access resources
-- **Key Vault Integration**: Qualys credentials stored in Azure Key Vault
-- **Private Endpoints**: Support for scanning private registries
-- **Network Isolation**: Can be deployed in VNet with private endpoints
-- **RBAC**: Minimal permissions following least-privilege principle
+Actual costs depend on image size and scan frequency.
 
 ## Monitoring
 
-### Application Insights Queries
+### View Scans
 
-View recent scans:
+Application Insights query for recent scans:
+
 ```kusto
 traces
 | where customDimensions.EventType == "ContainerScan"
-| project timestamp, severityLevel, message, customDimensions
+| project timestamp, image=customDimensions.Image,
+          critical=customDimensions.VulnCritical,
+          high=customDimensions.VulnHigh
 | order by timestamp desc
 ```
 
-Failed scans:
+### View Failures
+
 ```kusto
 exceptions
-| where customDimensions.Component == "QualysScanner"
-| project timestamp, problemId, outerMessage, customDimensions
+| where timestamp > ago(24h)
+| where customDimensions contains "QScannerACI"
+| project timestamp, problemId, outerMessage
 ```
 
-### Alerts
+### Active Scan Containers
 
-Pre-configured alerts for:
-- Scan failures
-- High/Critical vulnerabilities detected
-- Function execution failures
-- API rate limit warnings
+```bash
+az container list \
+  --resource-group qualys-scanner-rg \
+  --query "[?starts_with(name, 'qscanner-')].{Name:name, State:instanceView.state}"
+```
 
 ## Troubleshooting
 
-### Common Issues
+### Function not triggering
 
-**Event Grid not triggering:**
-- Verify Event Grid subscription is active
-- Check event filters match your deployment
-- Review Event Grid metrics in Azure Portal
+Check Event Grid subscription:
 
-**Qualys API errors:**
-- Verify API credentials in Key Vault
-- Check API endpoint URL
-- Ensure scanner appliance is online (self-hosted)
+```bash
+az eventgrid system-topic event-subscription show \
+  --name aci-container-deployments \
+  --resource-group qualys-scanner-rg \
+  --system-topic-name qualys-scanner-aci-topic
+```
 
-**Private registry access:**
-- Verify Managed Identity has AcrPull role
-- Check registry allows Azure service access
-- Review NSG/firewall rules
+Verify events are being delivered:
 
-### Debug Locally
+```bash
+az monitor metrics list \
+  --resource <event-grid-topic-id> \
+  --metric DeliverySuccessCount,DeliveryFailedCount
+```
+
+### Scan container fails
+
+Check Function App logs:
+
+```bash
+az monitor app-insights query \
+  --app qualys-scanner-func-xxx \
+  --analytics-query "exceptions | where timestamp > ago(1h)"
+```
+
+Common issues:
+- Invalid Qualys credentials (check Key Vault secrets)
+- Insufficient ACI quota (request quota increase)
+- Image pull failures (verify registry access)
+
+### Private registry access
+
+For Azure Container Registry, grant the Function App's managed identity AcrPull role:
+
+```bash
+PRINCIPAL_ID=$(az functionapp identity show \
+  --name qualys-scanner-func-xxx \
+  --resource-group qualys-scanner-rg \
+  --query principalId -o tsv)
+
+az role assignment create \
+  --assignee $PRINCIPAL_ID \
+  --role AcrPull \
+  --scope /subscriptions/xxx/resourceGroups/xxx/providers/Microsoft.ContainerRegistry/registries/xxx
+```
+
+## Development
+
+### Local Testing
 
 ```bash
 cd function_app
 pip install -r requirements.txt
+
+# Copy and configure local settings
+cp local.settings.json.sample local.settings.json
+# Edit local.settings.json with your credentials
+
+# Start function runtime
 func start
 ```
 
 Test with sample event:
+
 ```bash
 curl -X POST http://localhost:7071/api/EventProcessor \
   -H "Content-Type: application/json" \
   -d @test_events/aci_deployment.json
 ```
 
-## Production Considerations
+### Project Structure
 
-### Scaling
-- Function App scales automatically (Consumption or Premium plan)
-- For high volume, consider Premium plan with VNet integration
-- Event Grid handles up to 10 million events/second
+```
+function_app/
+  EventProcessor/          # Event Grid triggered function
+    __init__.py           # Main event handler
+    function.json         # Function bindings
+  qualys_scanner_aci.py   # ACI-based scanner
+  image_parser.py         # Container image name parser
+  storage_handler.py      # Azure Storage operations
+  requirements.txt        # Python dependencies
 
-### Cost Optimization
-- Use Consumption plan for sporadic deployments
-- Implement image caching to avoid duplicate scans
-- Set appropriate scan retention policies
+infrastructure/
+  main.bicep             # Azure resources
+  deploy.sh              # Deployment script
 
-### Compliance
-- Enable audit logging for all scans
-- Store scan results for required retention period
-- Implement policy enforcement (block vulnerable containers)
-
-## Advanced Features
-
-### Policy Enforcement
-Block deployments with vulnerabilities:
-```bash
-# Deploy with Azure Policy integration
-./infrastructure/deploy.sh -s <sub-id> -r <rg> -l <location> --enable-policy
+test_events/             # Sample Event Grid events
+config/                  # Configuration samples
 ```
 
-### Custom Scan Profiles
-Create custom scan configurations in `config/scan_profiles/`:
-```json
-{
-  "profile_name": "production",
-  "scan_options": {
-    "severity_threshold": "HIGH",
-    "block_deployment": true,
-    "max_age_days": 30
-  }
-}
+## Scan Results
+
+### Storage Structure
+
+Blob container `scan-results`:
+```
+docker.io_library_nginx_latest/
+  scan-20240115123456.json
+  scan-20240116234567.json
+myacr.azurecr.io_app_v1.0/
+  scan-20240115145623.json
 ```
 
-### Multi-Region Deployment
-Deploy across regions for high availability:
-```bash
-./infrastructure/deploy-multi-region.sh
-```
+Table `ScanMetadata`:
+- PartitionKey: Sanitized image name
+- RowKey: Scan ID
+- Columns: Image, Timestamp, VulnCritical, VulnHigh, VulnMedium, VulnLow, CompliancePassed, ComplianceFailed, BlobPath
 
-## Support and Contributing
+### Custom Tags
 
-- Report issues via GitHub Issues
-- Contribute via Pull Requests
-- Documentation: [Full documentation](docs/)
+Each scan includes tags for correlation:
+- `image`: Full image identifier
+- `container_type`: ACI or ACA
+- `azure_subscription`: Subscription ID
+- `resource_group`: Resource group name
+- `event_id`: Event Grid event ID
+- `scan_time`: ISO 8601 timestamp
+
+Query scans in Qualys portal using these tags to correlate with Azure deployments.
+
+## Security
+
+- Qualys credentials stored in Key Vault, referenced via Key Vault references in Function App settings
+- Function App uses system-assigned managed identity for all Azure resource access
+- Scan containers are ephemeral and deleted after completion
+- Storage account disables public blob access
+- All traffic uses TLS 1.2+
+- RBAC used throughout (no access keys where possible)
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License - see LICENSE file

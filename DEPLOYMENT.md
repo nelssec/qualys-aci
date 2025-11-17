@@ -1,259 +1,98 @@
-# Deployment Guide
-
-This guide provides detailed instructions for deploying the Qualys Azure Container Scanner in production.
-
-## Table of Contents
-
-1. [Prerequisites](#prerequisites)
-2. [Pre-Deployment Checklist](#pre-deployment-checklist)
-3. [Deployment Steps](#deployment-steps)
-4. [Post-Deployment Configuration](#post-deployment-configuration)
-5. [Verification](#verification)
-6. [Troubleshooting](#troubleshooting)
+# Production Deployment Guide
 
 ## Prerequisites
 
-### Azure Requirements
+- Azure subscription with Contributor role
+- Azure CLI 2.50.0+
+- Qualys subscription with Container Security module
+- Qualys API credentials
 
-- Azure subscription with Owner or Contributor role
-- Azure CLI version 2.50.0 or higher
-- Permissions to create:
-  - Resource Groups
-  - Storage Accounts
-  - Function Apps
-  - Key Vaults
-  - Event Grid subscriptions
-  - Role assignments
-
-### Qualys Requirements
-
-- Active Qualys subscription with Container Security module
-- API credentials (username and password)
-- API endpoint URL (varies by region):
-  - US Platform 1: `https://qualysapi.qualys.com`
-  - US Platform 2: `https://qualysapi.qg2.apps.qualys.com`
-  - US Platform 3: `https://qualysapi.qg3.apps.qualys.com`
-  - US Platform 4: `https://qualysapi.qg4.apps.qualys.com`
-  - EU Platform 1: `https://qualysapi.qualys.eu`
-  - EU Platform 2: `https://qualysapi.qg2.apps.qualys.eu`
-  - India Platform: `https://qualysapi.qg1.apps.qualys.in`
-
-### Local Development Tools
-
-- Python 3.9 or higher (for local testing)
-- Azure Functions Core Tools v4
-- Git
-- jq (for parsing JSON outputs)
-
-## Pre-Deployment Checklist
-
-- [ ] Verify Azure subscription has required resource providers registered:
-  ```bash
-  az provider register --namespace Microsoft.ContainerInstance
-  az provider register --namespace Microsoft.App
-  az provider register --namespace Microsoft.EventGrid
-  az provider register --namespace Microsoft.Storage
-  az provider register --namespace Microsoft.KeyVault
-  az provider register --namespace Microsoft.Web
-  ```
-
-- [ ] Verify Qualys API credentials:
-  ```bash
-  curl -u "username:password" https://qualysapi.qualys.com/api/2.0/fo/about/
-  ```
-
-- [ ] Choose deployment region (must support all required services)
-- [ ] Determine Function App SKU (Consumption Y1 for dev/test, Elastic Premium for production)
-- [ ] Configure notification email addresses
-- [ ] Review security and compliance requirements
-
-## Deployment Steps
-
-### Step 1: Clone Repository
+Register required resource providers:
 
 ```bash
-git clone <repository-url>
-cd qualys-aci
+az provider register --namespace Microsoft.ContainerInstance
+az provider register --namespace Microsoft.App
+az provider register --namespace Microsoft.EventGrid
+az provider register --namespace Microsoft.Storage
+az provider register --namespace Microsoft.KeyVault
+az provider register --namespace Microsoft.Web
 ```
 
-### Step 2: Configure Settings
-
-```bash
-# Copy sample configuration
-cp config/config.sample.json config/config.json
-
-# Edit configuration with your settings
-vim config/config.json
-```
-
-### Step 3: Set Environment Variables
-
-```bash
-# Export Qualys credentials
-export QUALYS_USERNAME="your-qualys-username"
-export QUALYS_PASSWORD="your-qualys-password"
-export QUALYS_API_URL="https://qualysapi.qualys.com"
-
-# Optional: Set notification email
-export NOTIFICATION_EMAIL="security@example.com"
-```
-
-### Step 4: Deploy Infrastructure
-
-#### Option A: Quick Deployment (Consumption Plan)
+## Deploy Infrastructure
 
 ```bash
 cd infrastructure
+
+export QUALYS_USERNAME="your-username"
+export QUALYS_PASSWORD="your-password"
+
 ./deploy.sh \
-  -s "your-subscription-id" \
-  -r "qualys-scanner-prod" \
-  -l "eastus" \
-  -e "security@example.com" \
-  --deploy-function
+  -s your-subscription-id \
+  -r qualys-scanner-prod \
+  -l eastus \
+  -n "$QUALYS_USERNAME" \
+  -w "$QUALYS_PASSWORD" \
+  -e security@example.com \
+  -k Y1
 ```
 
-#### Option B: Production Deployment (Elastic Premium)
+Options:
+- `-s`: Azure subscription ID (required)
+- `-r`: Resource group name (required)
+- `-l`: Azure region (required)
+- `-n`: Qualys username (required)
+- `-w`: Qualys password (required)
+- `-e`: Notification email (optional)
+- `-k`: Function App SKU - Y1 (Consumption) or EP1/EP2/EP3 (Premium)
 
-```bash
-cd infrastructure
-./deploy.sh \
-  -s "your-subscription-id" \
-  -r "qualys-scanner-prod" \
-  -l "eastus" \
-  -k "EP1" \
-  -e "security@example.com" \
-  --deploy-function
-```
+The deployment creates:
+- Storage account for scan results
+- Function App with system-assigned managed identity
+- Key Vault for Qualys credentials
+- Application Insights for monitoring
+- Event Grid system topic and subscriptions
+- RBAC role assignments
 
-#### Option C: Manual Deployment with Bicep
+## Deploy Function Code
 
-```bash
-cd infrastructure
-
-# Create resource group
-az group create \
-  --name "qualys-scanner-prod" \
-  --location "eastus"
-
-# Deploy infrastructure
-az deployment group create \
-  --name "qualys-scanner-$(date +%Y%m%d)" \
-  --resource-group "qualys-scanner-prod" \
-  --template-file main.bicep \
-  --parameters \
-    qualysApiUrl="$QUALYS_API_URL" \
-    qualysUsername="$QUALYS_USERNAME" \
-    qualysPassword="$QUALYS_PASSWORD" \
-    notificationEmail="$NOTIFICATION_EMAIL" \
-    functionAppSku="EP1"
-```
-
-### Step 5: Deploy Function Code
-
-If you didn't use `--deploy-function` flag:
+If not using `--deploy-function` flag in the deploy script:
 
 ```bash
 cd function_app
 
-# Install Azure Functions Core Tools if needed
-npm install -g azure-functions-core-tools@4
-
-# Get function app name from deployment
-FUNCTION_APP_NAME=$(az functionapp list \
+# Get function app name from deployment output
+FUNCTION_APP=$(az functionapp list \
   --resource-group qualys-scanner-prod \
   --query "[0].name" -o tsv)
 
-# Deploy function code
-func azure functionapp publish $FUNCTION_APP_NAME
+# Deploy
+func azure functionapp publish $FUNCTION_APP
 ```
 
-### Step 6: Configure Private Registry Access (Optional)
+## Configure Private Registry Access
 
-If scanning images from Azure Container Registry:
+For scanning images from Azure Container Registry:
 
 ```bash
-# Get function app principal ID
+# Get Function App managed identity
 PRINCIPAL_ID=$(az functionapp identity show \
-  --name $FUNCTION_APP_NAME \
+  --name $FUNCTION_APP \
   --resource-group qualys-scanner-prod \
   --query principalId -o tsv)
 
-# Grant AcrPull role to ACR
+# Grant AcrPull to each ACR
 az role assignment create \
   --assignee $PRINCIPAL_ID \
-  --role "AcrPull" \
-  --scope "/subscriptions/<sub-id>/resourceGroups/<acr-rg>/providers/Microsoft.ContainerRegistry/registries/<acr-name>"
+  --role AcrPull \
+  --scope /subscriptions/xxx/resourceGroups/xxx/providers/Microsoft.ContainerRegistry/registries/xxx
 ```
 
-## Post-Deployment Configuration
+## Verify Deployment
 
-### 1. Verify Event Grid Subscriptions
-
-```bash
-# List Event Grid subscriptions
-az eventgrid system-topic event-subscription list \
-  --resource-group qualys-scanner-prod \
-  --system-topic-name qualys-scanner-aci-topic
-
-# Check subscription status
-az eventgrid system-topic event-subscription show \
-  --name aci-container-deployments \
-  --resource-group qualys-scanner-prod \
-  --system-topic-name qualys-scanner-aci-topic
-```
-
-### 2. Configure Application Insights Alerts
+Test the end-to-end flow:
 
 ```bash
-# Create alert for failed scans
-az monitor metrics alert create \
-  --name "qualys-scan-failures" \
-  --resource-group qualys-scanner-prod \
-  --scopes "/subscriptions/<sub-id>/resourceGroups/qualys-scanner-prod/providers/Microsoft.Insights/components/<app-insights-name>" \
-  --condition "count exceptions > 5" \
-  --window-size 5m \
-  --evaluation-frequency 1m \
-  --action email security@example.com
-```
-
-### 3. Enable Diagnostic Logs
-
-```bash
-# Enable Function App diagnostic logs
-az monitor diagnostic-settings create \
-  --name "function-diagnostics" \
-  --resource "/subscriptions/<sub-id>/resourceGroups/qualys-scanner-prod/providers/Microsoft.Web/sites/$FUNCTION_APP_NAME" \
-  --logs '[{"category": "FunctionAppLogs", "enabled": true}]' \
-  --metrics '[{"category": "AllMetrics", "enabled": true}]' \
-  --workspace "/subscriptions/<sub-id>/resourceGroups/qualys-scanner-prod/providers/Microsoft.OperationalInsights/workspaces/<workspace-name>"
-```
-
-### 4. Configure Network Security (Production)
-
-For enhanced security in production:
-
-```bash
-# Enable VNet integration (Premium plans only)
-az functionapp vnet-integration add \
-  --name $FUNCTION_APP_NAME \
-  --resource-group qualys-scanner-prod \
-  --vnet <vnet-name> \
-  --subnet <subnet-name>
-
-# Enable private endpoints for storage
-az storage account network-rule add \
-  --resource-group qualys-scanner-prod \
-  --account-name <storage-account-name> \
-  --vnet-name <vnet-name> \
-  --subnet <subnet-name>
-```
-
-## Verification
-
-### 1. Test with Sample Container Deployment
-
-```bash
-# Deploy test ACI container
+# Deploy test container
 az container create \
   --resource-group test-rg \
   --name test-nginx \
@@ -261,199 +100,291 @@ az container create \
   --cpu 1 \
   --memory 1
 
-# Wait 30 seconds for event processing
+# Wait 2-3 minutes for scan to complete
 
-# Check function execution logs
-az monitor app-insights query \
-  --app $FUNCTION_APP_NAME \
-  --analytics-query "traces | where message contains 'nginx' | order by timestamp desc | take 10"
-```
-
-### 2. Verify Scan Results Storage
-
-```bash
-# Get storage account name
-STORAGE_ACCOUNT=$(az storage account list \
-  --resource-group qualys-scanner-prod \
-  --query "[0].name" -o tsv)
-
-# List scan results
-az storage blob list \
-  --account-name $STORAGE_ACCOUNT \
-  --container-name scan-results \
-  --output table
-
-# Query scan metadata
+# Check scan results
 az storage entity query \
-  --account-name $STORAGE_ACCOUNT \
+  --account-name <storage-account> \
   --table-name ScanMetadata \
-  --filter "Timestamp ge datetime'$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)'"
+  --filter "Image eq 'docker.io/library/nginx:latest'"
 ```
 
-### 3. Check Event Grid Metrics
+View function logs:
 
 ```bash
-# View Event Grid delivery metrics
+az monitor app-insights query \
+  --app $FUNCTION_APP \
+  --analytics-query "traces | where timestamp > ago(30m) | order by timestamp desc"
+```
+
+## Post-Deployment Configuration
+
+### Configure Alerts
+
+Create alert for critical vulnerabilities:
+
+```bash
+az monitor metrics alert create \
+  --name critical-vulnerabilities \
+  --resource-group qualys-scanner-prod \
+  --scopes /subscriptions/xxx/resourceGroups/qualys-scanner-prod/providers/Microsoft.Insights/components/xxx \
+  --condition "count exceptions > 0" \
+  --description "Alert on critical vulnerabilities found"
+```
+
+### Enable Diagnostic Logging
+
+```bash
+az monitor diagnostic-settings create \
+  --name function-logs \
+  --resource /subscriptions/xxx/resourceGroups/qualys-scanner-prod/providers/Microsoft.Web/sites/$FUNCTION_APP \
+  --logs '[{"category": "FunctionAppLogs", "enabled": true}]' \
+  --workspace /subscriptions/xxx/resourceGroups/qualys-scanner-prod/providers/Microsoft.OperationalInsights/workspaces/xxx
+```
+
+### Adjust Scan Timeout
+
+For large images that take longer to scan:
+
+```bash
+az functionapp config appsettings set \
+  --name $FUNCTION_APP \
+  --resource-group qualys-scanner-prod \
+  --settings "SCAN_TIMEOUT=3600"
+```
+
+Also update function timeout in host.json:
+
+```json
+{
+  "functionTimeout": "00:30:00"
+}
+```
+
+## Monitoring
+
+### Check Event Grid Delivery
+
+```bash
+az eventgrid system-topic event-subscription show \
+  --name aci-container-deployments \
+  --resource-group qualys-scanner-prod \
+  --system-topic-name qualys-scanner-aci-topic \
+  --query provisioningState
+```
+
+View metrics:
+
+```bash
 az monitor metrics list \
-  --resource "/subscriptions/<sub-id>/resourceGroups/qualys-scanner-prod/providers/Microsoft.EventGrid/systemTopics/qualys-scanner-aci-topic" \
-  --metric "DeliverySuccessCount,DeliveryFailedCount" \
-  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
-  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ)
+  --resource <event-grid-topic-id> \
+  --metric DeliverySuccessCount,DeliveryFailedCount \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)
+```
+
+### View Active Scans
+
+```bash
+az container list \
+  --resource-group qualys-scanner-prod \
+  --query "[?tags.purpose=='qscanner'].{Name:name, State:instanceView.state}"
+```
+
+### Query Scan Results
+
+Application Insights:
+
+```kusto
+traces
+| where customDimensions.EventType == "ContainerScan"
+| where timestamp > ago(24h)
+| summarize count() by tostring(customDimensions.Image)
+```
+
+Storage Table:
+
+```bash
+az storage entity query \
+  --account-name <storage-account> \
+  --table-name ScanMetadata \
+  --filter "Timestamp ge datetime'$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)'"
 ```
 
 ## Troubleshooting
 
-### Function App Not Receiving Events
+### Function Not Triggering
 
-**Issue**: Event Grid events not triggering function
-
-**Solutions**:
-1. Verify Event Grid subscription is active:
-   ```bash
-   az eventgrid system-topic event-subscription show \
-     --name aci-container-deployments \
-     --resource-group qualys-scanner-prod \
-     --system-topic-name qualys-scanner-aci-topic \
-     --query provisioningState
-   ```
-
-2. Check function app system key:
-   ```bash
-   az functionapp keys list \
-     --name $FUNCTION_APP_NAME \
-     --resource-group qualys-scanner-prod
-   ```
-
-3. Review Event Grid delivery failures:
-   ```bash
-   az monitor metrics list \
-     --resource "<event-grid-topic-id>" \
-     --metric "DeliveryFailedCount"
-   ```
-
-### Qualys API Authentication Errors
-
-**Issue**: 401 Unauthorized errors from Qualys API
-
-**Solutions**:
-1. Verify credentials in Key Vault:
-   ```bash
-   az keyvault secret show \
-     --vault-name <keyvault-name> \
-     --name QualysUsername
-
-   az keyvault secret show \
-     --vault-name <keyvault-name> \
-     --name QualysPassword
-   ```
-
-2. Test Qualys API directly:
-   ```bash
-   curl -u "$QUALYS_USERNAME:$QUALYS_PASSWORD" \
-     "$QUALYS_API_URL/api/2.0/fo/about/"
-   ```
-
-3. Check Key Vault access policies:
-   ```bash
-   az keyvault show \
-     --name <keyvault-name> \
-     --query "properties.accessPolicies"
-   ```
-
-### Scan Timeouts
-
-**Issue**: Scans timing out before completion
-
-**Solutions**:
-1. Increase scan timeout in function app settings:
-   ```bash
-   az functionapp config appsettings set \
-     --name $FUNCTION_APP_NAME \
-     --resource-group qualys-scanner-prod \
-     --settings "SCAN_TIMEOUT=3600"
-   ```
-
-2. Increase function timeout (Premium plans):
-   ```bash
-   # Edit host.json
-   {
-     "functionTimeout": "00:30:00"
-   }
-   ```
-
-### Storage Access Errors
-
-**Issue**: Unable to save scan results to storage
-
-**Solutions**:
-1. Verify storage account firewall rules:
-   ```bash
-   az storage account show \
-     --name <storage-account-name> \
-     --query "networkRuleSet"
-   ```
-
-2. Check function app managed identity has storage permissions:
-   ```bash
-   az role assignment list \
-     --assignee <function-app-principal-id> \
-     --scope "/subscriptions/<sub-id>/resourceGroups/qualys-scanner-prod/providers/Microsoft.Storage/storageAccounts/<storage-account-name>"
-   ```
-
-## Monitoring and Maintenance
-
-### Daily Checks
+Check Event Grid subscription:
 
 ```bash
-# Check function execution count
-az monitor metrics list \
-  --resource "/subscriptions/<sub-id>/resourceGroups/qualys-scanner-prod/providers/Microsoft.Web/sites/$FUNCTION_APP_NAME" \
-  --metric "FunctionExecutionCount" \
-  --start-time $(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-
-# Review error logs
-az monitor app-insights query \
-  --app $FUNCTION_APP_NAME \
-  --analytics-query "exceptions | where timestamp > ago(24h) | summarize count() by problemId"
+az eventgrid system-topic event-subscription show \
+  --name aci-container-deployments \
+  --resource-group qualys-scanner-prod \
+  --system-topic-name qualys-scanner-aci-topic
 ```
 
-### Weekly Reviews
+Verify function system key is configured:
 
-- Review scan results for trending vulnerabilities
-- Check storage utilization
-- Review and update security policies
-- Verify backup and retention policies
+```bash
+az functionapp keys list \
+  --name $FUNCTION_APP \
+  --resource-group qualys-scanner-prod
+```
 
-### Monthly Tasks
+### Scan Container Fails
 
-- Update function app dependencies
-- Review and optimize costs
-- Update Qualys scanner configurations
-- Test disaster recovery procedures
+Check function logs for errors:
+
+```bash
+az monitor app-insights query \
+  --app $FUNCTION_APP \
+  --analytics-query "exceptions | where timestamp > ago(1h) | project timestamp, problemId, outerMessage"
+```
+
+Common issues:
+- Invalid Qualys credentials: Verify secrets in Key Vault
+- ACI quota exceeded: Request quota increase
+- Network issues: Check NSG rules if using VNet
+
+### Container Fails to Pull Image
+
+For private registries, ensure managed identity has access:
+
+```bash
+# Check role assignments
+az role assignment list \
+  --assignee $PRINCIPAL_ID \
+  --scope <acr-resource-id>
+```
+
+Verify registry allows Azure service access:
+
+```bash
+az acr show \
+  --name <registry-name> \
+  --query networkRuleSet
+```
+
+### Scan Timeout
+
+Increase timeout for large images:
+
+```bash
+# Function app setting
+az functionapp config appsettings set \
+  --name $FUNCTION_APP \
+  --settings "SCAN_TIMEOUT=3600"
+
+# Also update host.json functionTimeout
+```
+
+## Cost Optimization
+
+- Use Consumption plan (Y1) for low-to-medium volume
+- Scan cache period set to 24 hours to avoid duplicate scans
+- Delete old scan results from storage after retention period
+
+Monitor costs:
+
+```bash
+az consumption usage list \
+  --start-date 2024-01-01 \
+  --end-date 2024-01-31 \
+  --query "[?contains(instanceName, 'qscanner')]"
+```
+
+## Scaling Considerations
+
+Function App automatically scales based on Event Grid queue depth. For high volume:
+
+- Use Premium plan (EP1+) for faster cold starts
+- Consider VNet integration for network isolation
+- Increase ACI quota if hitting limits
+
+Premium plan configuration:
+
+```bash
+./deploy.sh \
+  -s subscription-id \
+  -r qualys-scanner-prod \
+  -l eastus \
+  -k EP1 \
+  -n "$QUALYS_USERNAME" \
+  -w "$QUALYS_PASSWORD"
+```
+
+## Security Hardening
+
+For production deployments:
+
+1. Enable VNet integration (Premium plan required):
+
+```bash
+az functionapp vnet-integration add \
+  --name $FUNCTION_APP \
+  --resource-group qualys-scanner-prod \
+  --vnet <vnet-name> \
+  --subnet <subnet-name>
+```
+
+2. Enable private endpoints for storage:
+
+```bash
+az storage account network-rule add \
+  --account-name <storage-account> \
+  --vnet-name <vnet-name> \
+  --subnet <subnet-name>
+```
+
+3. Restrict Key Vault network access:
+
+```bash
+az keyvault network-rule add \
+  --name <keyvault-name> \
+  --vnet-name <vnet-name> \
+  --subnet <subnet-name>
+```
+
+4. Enable Azure Defender:
+
+```bash
+az security pricing create \
+  --name VirtualMachines \
+  --tier Standard
+```
+
+## Backup and Disaster Recovery
+
+Storage account uses LRS by default. For geo-redundancy:
+
+```bash
+az storage account update \
+  --name <storage-account> \
+  --resource-group qualys-scanner-prod \
+  --sku Standard_GRS
+```
+
+Key Vault has soft delete enabled by default with 90-day retention.
+
+Export ARM template for infrastructure:
+
+```bash
+az group export \
+  --name qualys-scanner-prod \
+  --output json > backup-template.json
+```
 
 ## Rollback Procedure
 
-If issues occur after deployment:
+If deployment fails or issues occur:
 
 ```bash
 # List deployments
 az deployment group list \
   --resource-group qualys-scanner-prod \
-  --query "[].{name:name, timestamp:properties.timestamp}" \
-  --output table
+  --query "[].{Name:name, Time:properties.timestamp, State:properties.provisioningState}"
 
-# Rollback to previous deployment
-az deployment group create \
-  --name "rollback-$(date +%Y%m%d)" \
-  --resource-group qualys-scanner-prod \
-  --mode Complete \
-  --template-file <previous-deployment-template>
+# Delete resources and redeploy
+az group delete --name qualys-scanner-prod --yes
+./deploy.sh # with original parameters
 ```
-
-## Support
-
-For issues or questions:
-- Review logs in Application Insights
-- Check Azure status page: https://status.azure.com
-- Qualys support: https://www.qualys.com/support/
-- GitHub Issues: <repository-issues-url>
