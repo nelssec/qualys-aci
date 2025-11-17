@@ -1,35 +1,25 @@
-@description('Location for all resources')
 param location string = resourceGroup().location
-
-@description('Name prefix for all resources')
 param namePrefix string = 'qualys-scanner'
 
-@description('Qualys API URL')
 @secure()
 param qualysApiUrl string
 
-@description('Qualys API Username')
 @secure()
 param qualysUsername string
 
-@description('Qualys API Password')
 @secure()
 param qualysPassword string
 
-@description('Email for security notifications')
 param notificationEmail string = ''
 
-@description('Severity threshold for notifications')
 @allowed([
   'CRITICAL'
   'HIGH'
 ])
 param notifySeverityThreshold string = 'HIGH'
 
-@description('Hours between duplicate scans')
 param scanCacheHours int = 24
 
-@description('Function App SKU')
 @allowed([
   'Y1'
   'EP1'
@@ -93,7 +83,6 @@ resource scanMetadataTable 'Microsoft.Storage/storageAccounts/tableServices/tabl
   ]
 }
 
-// Application Insights
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
@@ -161,7 +150,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   }
   kind: 'functionapp'
   properties: {
-    reserved: true // Linux
+    reserved: true
   }
 }
 

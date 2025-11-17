@@ -29,7 +29,6 @@ def main(event: func.EventGridEvent):
             logging.warning(f'Unknown container type in subject: {subject}')
             return
 
-        # Extract container images from the event
         images = extract_images(event_data, container_type)
 
         if not images:
@@ -38,16 +37,12 @@ def main(event: func.EventGridEvent):
 
         logging.info(f'Found {len(images)} container images to scan')
 
-        # Initialize qscanner (using ACI for on-demand scanning)
-        # Pass event subscription ID to allow cross-subscription scanning
         scanner = QScannerACI(subscription_id=event_subscription_id)
 
-        # Initialize storage handler for results
         storage = StorageHandler(
             connection_string=os.environ['STORAGE_CONNECTION_STRING']
         )
 
-        # Process each image
         results = []
         for image in images:
             logging.info(f'Processing image: {image}')
