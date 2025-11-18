@@ -28,22 +28,8 @@ resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
       includedEventTypes: [
         'Microsoft.Resources.ResourceWriteSuccess'
       ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.ContainerInstance'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.ContainerInstance/containerGroups/write'
-          ]
-        }
-      ]
+      // Temporarily removed advanced filters to debug - catch all ResourceWriteSuccess events
+      // We'll filter in the function code instead
     }
     eventDeliverySchema: 'EventGridSchema'
     retryPolicy: {
@@ -69,22 +55,8 @@ resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
       includedEventTypes: [
         'Microsoft.Resources.ResourceWriteSuccess'
       ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.App'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.App/containerApps/write'
-          ]
-        }
-      ]
+      // Temporarily removed advanced filters to debug - catch all ResourceWriteSuccess events
+      // We'll filter in the function code instead
     }
     eventDeliverySchema: 'EventGridSchema'
     retryPolicy: {
