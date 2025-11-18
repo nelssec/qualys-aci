@@ -27,10 +27,9 @@ az group create --name "$RG" --location "$LOCATION" --output none
 echo "[2/4] Deploying infrastructure (Function App, Storage, Key Vault, Event Grid Topic)"
 az deployment group create \
   --resource-group "$RG" \
-  --template-file infrastructure/deploy.bicep \
-  --parameters infrastructure/deploy.bicepparam \
+  --template-file infrastructure/main.bicep \
+  --parameters @infrastructure/main.bicepparam \
   --parameters qualysAccessToken="$QUALYS_TOKEN" \
-  --parameters deployEventGridSubscriptions=false \
   --output none
 
 FUNCTION_APP=$(az functionapp list --resource-group "$RG" --query "[0].name" -o tsv)
@@ -46,12 +45,12 @@ echo ""
 
 # Step 4: Deploy Event Grid subscriptions
 echo "[4/4] Deploying Event Grid subscriptions"
+EVENT_GRID_TOPIC=$(az eventgrid system-topic list --resource-group "$RG" --query "[0].name" -o tsv)
 az deployment group create \
   --resource-group "$RG" \
-  --template-file infrastructure/deploy.bicep \
-  --parameters infrastructure/deploy.bicepparam \
-  --parameters qualysAccessToken="$QUALYS_TOKEN" \
-  --parameters deployEventGridSubscriptions=true \
+  --template-file infrastructure/eventgrid.bicep \
+  --parameters functionAppName="$FUNCTION_APP" \
+  --parameters eventGridTopicName="$EVENT_GRID_TOPIC" \
   --output none
 echo ""
 
