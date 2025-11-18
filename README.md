@@ -43,8 +43,6 @@ Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Sc
 az deployment sub create \
   --location eastus \
   --template-file infrastructure/main.bicep \
-  --parameters location=eastus \
-  --parameters resourceGroupName=qualys-scanner-rg \
   --parameters qualysPod=US2 \
   --parameters qualysAccessToken="your-qualys-token"
 ```
@@ -53,7 +51,7 @@ This creates:
 - Resource group
 - Function App with subscription-level permissions
 - Storage Account, Key Vault, ACR
-- Event Grid system topic
+- Event Grid system topic and subscriptions
 
 ### 2. Deploy Function Code
 
@@ -64,20 +62,9 @@ func azure functionapp publish $FUNCTION_APP --python --build remote
 cd ..
 ```
 
-### 3. Enable Event Grid Subscriptions
+Event Grid subscriptions activate automatically once function code is deployed.
 
-```bash
-az deployment sub create \
-  --location eastus \
-  --template-file infrastructure/main.bicep \
-  --parameters location=eastus \
-  --parameters resourceGroupName=qualys-scanner-rg \
-  --parameters qualysPod=US2 \
-  --parameters qualysAccessToken="your-qualys-token" \
-  --parameters enableEventGrid=true
-```
-
-### 4. Test Scanning
+### 3. Test Scanning
 
 Deploy a test container to trigger automatic scanning:
 
