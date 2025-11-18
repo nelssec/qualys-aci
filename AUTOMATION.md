@@ -2,19 +2,19 @@
 
 ## Overview
 
-This system **automatically scans all container deployments** in your Azure subscription using Qualys qscanner. The automation is already implemented and ready to use!
+This system automatically scans all container deployments in your Azure subscription using Qualys qscanner.
 
 ## How It Works
 
 ```
-Container Deployment → Event Grid → Azure Function → QScanner (ACI) → Qualys Dashboard
+Container Deployment → Event Grid → Azure Function → QScanner (ACI) → Qualys
 ```
 
-1. **Deploy a container** (ACI or ACA) to your Azure resource group
-2. **Event Grid** detects the deployment and triggers the EventProcessor function
-3. **EventProcessor function** extracts container images and initiates scans
-4. **QScanner** runs in a temporary ACI container to scan the image
-5. **Results** are uploaded to Qualys and stored in Azure Storage
+1. Deploy a container (ACI or ACA) to your Azure resource group
+2. Event Grid detects the deployment and triggers the EventProcessor function
+3. EventProcessor function extracts container images and initiates scans
+4. QScanner runs in a temporary ACI container to scan the image
+5. Results are uploaded to Qualys and stored in Azure Storage
 
 ## Architecture Components
 
@@ -48,58 +48,58 @@ Container Deployment → Event Grid → Azure Function → QScanner (ACI) → Qu
   - Tracks scan metadata in Azure Table Storage
   - Implements caching to avoid duplicate scans
 
-## Setup Instructions
+## Deployment
 
-### Step 1: Update Qualys Token
-
-The Qualys access token needs to be stored in Azure Key Vault:
+Deploy infrastructure and configure token:
 
 ```bash
-export QUALYS_TOKEN="your-qualys-token-here"
-./setup-automation.sh
+az group create --name qualys-scanner-rg --location eastus
+
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file infrastructure/main.bicep \
+  --parameters infrastructure/main.bicepparam \
+  --parameters qualysAccessToken='your-token-here'
+
+cd function_app
+func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
+cd ..
+
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file infrastructure/eventgrid.bicep \
+  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
+  --parameters eventGridTopicName=$(az eventgrid system-topic list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
 ```
 
-This script will:
-- Store the token in Azure Key Vault
-- Verify Function App configuration
-- Deploy Event Grid subscriptions if needed
-- Deploy the latest function code
+See DEPLOYMENT.md for detailed instructions.
 
-### Step 2: Verify Configuration
+## Updating Token
 
-Check that the automation is properly configured:
+Update the Qualys token in Key Vault:
 
 ```bash
-# Get resource group name
 RG="qualys-scanner-rg"
+KV_NAME=$(az keyvault list --resource-group $RG --query "[0].name" -o tsv)
+az keyvault secret set --vault-name "$KV_NAME" --name "QualysAccessToken" --value "your-token"
+```
 
-# Check Function App settings
-az functionapp config appsettings list \
-  --resource-group $RG \
-  --name $(az functionapp list --resource-group $RG --query "[0].name" -o tsv) \
-  --query "[?name=='QUALYS_POD' || name=='QSCANNER_IMAGE'].{Name:name, Value:value}" \
-  --output table
+## Verification
 
-# Check Event Grid subscriptions
+Check Event Grid subscriptions:
+
+```bash
 az eventgrid system-topic event-subscription list \
-  --resource-group $RG \
-  --system-topic-name $(az eventgrid system-topic list --resource-group $RG --query "[0].name" -o tsv) \
+  --resource-group qualys-scanner-rg \
+  --system-topic-name $(az eventgrid system-topic list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
   --output table
 ```
 
-### Step 3: Test the Automation
-
-Deploy a test container to verify the automation works:
+Test with a container deployment:
 
 ```bash
 ./test-automation.sh
 ```
-
-This will:
-1. Deploy a test nginx container
-2. Wait for Event Grid to trigger the scanner
-3. Show Function App logs
-4. Display any qscanner containers that were created
 
 ## Configuration
 
@@ -122,13 +122,13 @@ All configuration is managed via environment variables in the Function App:
 ### In Qualys Dashboard
 
 1. Log in to your Qualys portal
-2. Navigate to **Container Security** or **CI/CD Security**
+2. Navigate to Container Security or CI/CD Security
 3. Look for scans tagged with:
-   - `container_type`: `ACI` or `ACA`
-   - `azure_subscription`: Your subscription ID
-   - `resource_group`: The resource group name
+   - container_type: ACI or ACA
+   - azure_subscription: Your subscription ID
+   - resource_group: The resource group name
 
-**Note**: Scans may take 2-5 minutes to appear in the Qualys dashboard after upload.
+Note: Scans may take 2-5 minutes to appear in the Qualys dashboard after upload.
 
 ### In Azure Storage
 
