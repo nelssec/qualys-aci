@@ -3,14 +3,18 @@ import json
 import logging
 import azure.functions as func
 from datetime import datetime
+
+# Use absolute imports instead of relative
+import sys
+import pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+
 from qualys_scanner_aci import QScannerACI
 from image_parser import ImageParser
 from storage_handler import StorageHandler
 
-app = func.FunctionApp()
 
-@app.event_grid_trigger(arg_name="event")
-def EventProcessor(event: func.EventGridEvent):
+def main(event: func.EventGridEvent):
     logging.info(f'Python EventGrid trigger processed an event: {event.get_json()}')
 
     try:
