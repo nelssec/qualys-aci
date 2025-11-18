@@ -68,16 +68,25 @@ If quota is 0, request increase via Azure Portal or use different SKU (EP1, P1v3
 
 ### Single Subscription
 
-Configure `infrastructure/main.bicepparam`:
+Configure via environment variables (optional, defaults shown):
 
-```bicep
-param qualysPod = 'US2'
-param location = 'eastus'
-param functionAppSku = 'Y1'
-param notificationEmail = 'security@example.com'  // Optional
+```bash
+export RESOURCE_GROUP='qualys-scanner-rg'
+export LOCATION='eastus'
+export QUALYS_POD='US2'
+export FUNCTION_SKU='EP1'  # Y1, EP1, P1v3, etc.
+export NOTIFICATION_EMAIL='security@example.com'  # Optional
+export SCAN_CACHE_HOURS='24'  # Optional
 ```
 
 Deploy:
+
+```bash
+export QUALYS_TOKEN='your-token'
+./deploy.sh
+```
+
+Minimal deployment (uses defaults):
 
 ```bash
 export QUALYS_TOKEN='your-token'
