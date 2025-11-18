@@ -57,8 +57,7 @@ if [ -n "$QSCANNER_CONTAINER" ]; then
     --name "$QSCANNER_CONTAINER"
 else
   echo "No qscanner container found. Check function logs:"
-  az functionapp logs tail \
+  az functionapp log tail \
     --resource-group qualys-scanner-rg \
-    --name qscan-func-alol3ziwapdfm \
-    --max-events 50
+    --name qscan-func-alol3ziwapdfm
 fi
