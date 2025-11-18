@@ -283,7 +283,7 @@ If you already have single-subscription deployment:
 az eventgrid system-topic event-subscription delete \
   --name aci-container-deployments \
   --resource-group qualys-scanner-rg \
-  --system-topic-name qualys-scanner-aci-topic
+  --system-topic-name qscan-aci-topic
 ```
 
 ## Best Practices
