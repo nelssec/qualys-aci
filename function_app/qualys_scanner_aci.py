@@ -371,22 +371,16 @@ class QScannerACI:
         Returns:
             Command as list for ACI container
         """
-        cmd_parts = [
-            'qscanner',           # qscanner binary
-            'image',              # qscanner subcommand
-            image_id,             # Full image name with registry
-            '--pod', self.qualys_pod,
-            '--scan-types', 'os,sca,secret',  # Scan types: OS packages, SCA, secrets
-            '--format', 'json',   # JSON output for parsing
-            '--skip-verify-tls'   # Skip TLS verification for registries
-        ]
+        # Build the qscanner command string
+        cmd_str = f'/qscanner image {image_id} --pod {self.qualys_pod} --scan-types os,sca,secret --format json --skip-verify-tls'
 
         # Add custom tags for tracking
         if custom_tags:
             for key, value in custom_tags.items():
-                cmd_parts.extend(['--tag', f'{key}={value}'])
+                cmd_str += f' --tag {key}={value}'
 
-        return cmd_parts
+        # Use shell wrapper to execute qscanner from its absolute path
+        return ['/bin/sh', '-c', cmd_str]
 
     def _parse_qscanner_output(self, output: str) -> Dict:
         """Parse qscanner JSON output"""
