@@ -6,7 +6,14 @@ set -e
 RG="qualys-scanner-rg"
 ACR_NAME=$(az acr list --resource-group $RG --query "[0].name" -o tsv)
 ACR_SERVER=$(az acr list --resource-group $RG --query "[0].loginServer" -o tsv)
-QUALYS_TOKEN=$(az keyvault secret show --vault-name $(az keyvault list --resource-group $RG --query "[0].name" -o tsv) --name QualysAccessToken --query "value" -o tsv)
+
+# Use environment variable if provided, otherwise fetch from Key Vault
+if [ -z "$QUALYS_TOKEN" ]; then
+  echo "Fetching QUALYS_TOKEN from Key Vault..."
+  QUALYS_TOKEN=$(az keyvault secret show --vault-name $(az keyvault list --resource-group $RG --query "[0].name" -o tsv) --name QualysAccessToken --query "value" -o tsv)
+else
+  echo "Using QUALYS_TOKEN from environment variable"
+fi
 
 echo "=========================================="
 echo "  Testing QScanner Image in ACI"
