@@ -234,13 +234,25 @@ az monitor app-insights query \
 
 ## Testing
 
-Test the automation:
+Verify deployment status:
+
+```bash
+./verify-deployment.sh
+```
+
+Test with a fresh image (will trigger actual scan):
+
+```bash
+./test-fresh-scan.sh
+```
+
+Test with cached image (will skip scan if recently scanned):
 
 ```bash
 ./test-automation.sh
 ```
 
-This deploys a test nginx container and monitors scan execution.
+Note: Images are cached for 24 hours by default. If you see "Image was recently scanned, skipping" in logs, this is expected behavior. Use `./test-fresh-scan.sh` to test with an image that hasn't been scanned yet.
 
 Manual qscanner test:
 

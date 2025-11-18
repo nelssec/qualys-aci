@@ -141,6 +141,32 @@ export QUALYS_TOKEN='your-new-token'
 
 The Function App's managed identity already has the "Key Vault Secrets User" role (read-only), which is sufficient for runtime operation. The Secrets Officer role is only needed for manual token updates.
 
+### Scans Being Skipped (Cached)
+
+If you see logs like:
+```
+Found 2 recent scans for mcr.microsoft.com/azuredocs/aci-helloworld:latest
+Image mcr.microsoft.com/azuredocs/aci-helloworld:latest was recently scanned, skipping
+```
+
+This is **expected behavior**. The system caches scan results for 24 hours (default) to avoid duplicate scans of the same image.
+
+**To test with a fresh scan:**
+```bash
+./test-fresh-scan.sh  # Uses nginx image that likely hasn't been scanned
+```
+
+**To force rescan an image:**
+1. Wait 24 hours for cache to expire
+2. Deploy with a different tag: `image:v2` instead of `image:v1`
+3. Deploy with digest: `image@sha256:...`
+4. Change `SCAN_CACHE_HOURS` environment variable in Function App
+
+Cache is stored in Azure Table Storage (`ScanMetadata` table). You can view cached scans:
+```bash
+./view-scan-results.sh
+```
+
 ### QScanner Containers in Logs
 
 You may see Event Grid events for containers starting with "qscanner-" in the logs. These are automatically filtered out by the EventProcessor to prevent infinite loops. The EventProcessor skips any container with a name starting with "qscanner-" since these are the scanner containers themselves, not containers to be scanned.
