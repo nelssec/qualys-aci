@@ -60,7 +60,7 @@ param notifySeverityThreshold = 'HIGH'
 param functionAppSku = 'Y1'
 ```
 
-#### Step 2: Deploy
+#### Step 2: Deploy Infrastructure
 
 ```bash
 cd infrastructure
@@ -93,7 +93,20 @@ FUNCTION_APP=$(az deployment group show \
 func azure functionapp publish $FUNCTION_APP --build remote
 ```
 
-Event Grid subscriptions include automatic retry logic and activate once function code is deployed.
+#### Step 4: Deploy Event Grid Subscriptions
+
+```bash
+cd ../infrastructure
+
+# Deploy Event Grid subscriptions (now that function endpoint exists)
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file eventgrid.bicep \
+  --parameters eventgrid.bicepparam \
+  --parameters functionAppName=$FUNCTION_APP
+```
+
+Event Grid subscriptions are deployed separately to ensure endpoint validation succeeds.
 
 ### Option 2: Tenant-Wide Monitoring
 
@@ -133,7 +146,21 @@ FUNCTION_APP=$(az deployment group show \
 func azure functionapp publish $FUNCTION_APP --build remote
 ```
 
-#### Step 3: Get Management Group ID
+#### Step 3: Deploy Event Grid Subscriptions (Subscription-Scoped)
+
+```bash
+cd ../infrastructure
+
+# Deploy Event Grid subscriptions for the central subscription
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --subscription central-subscription-id \
+  --template-file eventgrid.bicep \
+  --parameters eventgrid.bicepparam \
+  --parameters functionAppName=$FUNCTION_APP
+```
+
+#### Step 4: Get Management Group ID
 
 For entire tenant:
 
@@ -150,7 +177,7 @@ For specific business unit, list management groups:
 az account management-group list --output table
 ```
 
-#### Step 4: Configure Tenant-Wide Parameters
+#### Step 5: Configure Tenant-Wide Parameters
 
 Edit `infrastructure/tenant-wide.bicepparam`:
 
@@ -163,7 +190,7 @@ param functionSubscriptionId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'  // Centra
 param functionAppName = 'qscan-func-abc123'  // From step 2
 ```
 
-#### Step 5: Deploy Tenant-Wide Event Grid
+#### Step 6: Deploy Tenant-Wide Event Grid
 
 ```bash
 az deployment mg create \

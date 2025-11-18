@@ -64,12 +64,12 @@ param functionAppSku = 'Y1'  // Consumption plan
 Deploy:
 
 ```bash
-# Create resource group
+# Step 1: Create resource group
 az group create \
   --name qualys-scanner-rg \
   --location eastus
 
-# Deploy infrastructure
+# Step 2: Deploy infrastructure
 cd infrastructure
 az deployment group create \
   --resource-group qualys-scanner-rg \
@@ -77,16 +77,24 @@ az deployment group create \
   --parameters main.bicepparam \
   --parameters qualysAccessToken='your-access-token'
 
-# Deploy function code
+# Step 3: Deploy function code
 cd ../function_app
 FUNCTION_APP=$(az deployment group show \
   --resource-group qualys-scanner-rg \
   --name main \
   --query properties.outputs.functionAppName.value -o tsv)
 func azure functionapp publish $FUNCTION_APP --build remote
+
+# Step 4: Deploy Event Grid subscriptions
+cd ../infrastructure
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file eventgrid.bicep \
+  --parameters eventgrid.bicepparam \
+  --parameters functionAppName=$FUNCTION_APP
 ```
 
-**Infrastructure & Code Separation:** Infrastructure deployment handles all Azure resources via Bicep. Function code is deployed separately using Azure Functions Core Tools. Event Grid subscriptions include automatic retry logic and activate once the function code is deployed.
+**Clean Three-Step Process:** Infrastructure → Function Code → Event Grid. Each step has a clear purpose and will not fail.
 
 ### Option 2: Tenant-Wide Monitoring
 
