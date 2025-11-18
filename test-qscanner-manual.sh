@@ -69,7 +69,7 @@ az container create \
   --os-type Linux \
   --environment-variables \
     QUALYS_ACCESS_TOKEN="$QUALYS_TOKEN" \
-  --command-line "qscanner image $TEST_IMAGE --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls" \
+  --command-line "/bin/sh -c \"/qscanner image ${TEST_IMAGE} --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls\"" \
   --output none
 
 echo "✓ Container created"
