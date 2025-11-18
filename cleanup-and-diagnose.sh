@@ -35,11 +35,20 @@ fi
 
 echo ""
 echo "=== Checking Event Grid subscriptions ==="
-az eventgrid system-topic event-subscription list \
+EVENT_GRID_TOPIC=$(az deployment group show \
   --resource-group $RG \
-  --system-topic-name qualys-scanner-events \
-  --query "[].{Name:name, ProvisioningState:provisioningState, Endpoint:destination.endpointType}" \
-  --output table
+  --name main \
+  --query "properties.outputs.eventGridTopicName.value" -o tsv 2>/dev/null || echo "")
+
+if [ -n "$EVENT_GRID_TOPIC" ]; then
+  az eventgrid system-topic event-subscription list \
+    --resource-group $RG \
+    --system-topic-name "$EVENT_GRID_TOPIC" \
+    --query "[].{Name:name, ProvisioningState:provisioningState, Endpoint:destination.endpointType}" \
+    --output table
+else
+  echo "Event Grid topic not found. Run ./deploy-eventgrid.sh to deploy Event Grid subscriptions."
+fi
 
 echo ""
 echo "=== Checking function app settings ==="
