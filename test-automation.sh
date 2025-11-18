@@ -30,11 +30,11 @@ sleep 30
 echo ""
 
 FUNCTION_APP=$(az functionapp list --resource-group $RG --query "[0].name" -o tsv)
-APP_INSIGHTS=$(az monitor app-insights component list --resource-group $RG --query "[0].name" -o tsv)
+APP_INSIGHTS_ID=$(az monitor app-insights component list --resource-group $RG --query "[0].appId" -o tsv)
 
 echo "Recent EventProcessor logs:"
 az monitor app-insights query \
-  --app "$APP_INSIGHTS" \
+  --app "$APP_INSIGHTS_ID" \
   --analytics-query "traces
     | where timestamp > ago(5m)
     | where operation_Name == 'EventProcessor'
