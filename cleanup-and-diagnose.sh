@@ -35,10 +35,7 @@ fi
 
 echo ""
 echo "=== Checking Event Grid subscriptions ==="
-EVENT_GRID_TOPIC=$(az deployment group show \
-  --resource-group $RG \
-  --name main \
-  --query "properties.outputs.eventGridTopicName.value" -o tsv 2>/dev/null || echo "")
+EVENT_GRID_TOPIC=$(az eventgrid system-topic list --resource-group $RG --query "[0].name" -o tsv 2>/dev/null || echo "")
 
 if [ -n "$EVENT_GRID_TOPIC" ]; then
   az eventgrid system-topic event-subscription list \
