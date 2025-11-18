@@ -47,22 +47,15 @@ param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
 
 // Resource naming with Azure constraints
-// Storage: 3-24 chars, alphanumeric only
-// Key Vault: 3-24 chars, alphanumeric and hyphens, no consecutive hyphens
-// uniqueString generates 13 chars, so 'qscan' (5) + 13 = 18 chars (within 24 limit)
+// Storage: 3-24 chars, alphanumeric only (qscan=5 + uniqueString=13 = 18 chars)
+// Key Vault: 3-24 chars, alphanumeric and hyphens (qskv=4 + uniqueString=13 = 17 chars)
+// uniqueString always generates exactly 13 characters
 var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
 var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
 var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
 
-// Validate generated names meet Azure requirements
-var storageNameLength = length(storageAccountName)
-var keyVaultNameLength = length(keyVaultName)
-
-// These will cause deployment to fail with clear messages if constraints violated
-var _ = storageNameLength >= 3 && storageNameLength <= 24 ? true : error('Storage account name must be 3-24 characters')
-var __ = keyVaultNameLength >= 3 && keyVaultNameLength <= 24 ? true : error('Key Vault name must be 3-24 characters')
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
