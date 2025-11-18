@@ -6,16 +6,17 @@ set -e
 
 RG="qualys-scanner-rg"
 TEST_CONTAINER_NAME="test-automation-$(date +%s)"
+TEST_IMAGE="mcr.microsoft.com/azuredocs/aci-helloworld:latest"
 
 echo "Testing Automated Container Scanning"
 echo "Container: $TEST_CONTAINER_NAME"
-echo "Image: nginx:latest"
+echo "Image: $TEST_IMAGE"
 echo ""
 
 az container create \
   --resource-group $RG \
   --name $TEST_CONTAINER_NAME \
-  --image nginx:latest \
+  --image $TEST_IMAGE \
   --cpu 1 \
   --memory 1 \
   --os-type Linux \
