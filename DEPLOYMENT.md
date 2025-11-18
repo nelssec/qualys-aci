@@ -33,6 +33,7 @@ using './main.bicep'
 
 param location = 'eastus'
 param namePrefix = 'qualys-scanner'
+param qualysPod = 'US2'
 param notificationEmail = 'security@example.com'
 param notifySeverityThreshold = 'HIGH'
 param functionAppSku = 'Y1'
@@ -51,11 +52,10 @@ az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file main.bicep \
   --parameters main.bicepparam \
-  --parameters qualysPod='US2' \
   --parameters qualysAccessToken='your-access-token'
 ```
 
-Credentials and pod are passed via command line for security (not stored in parameter files).
+Access token is passed via command line for security (not stored in parameter file).
 
 #### Step 3: Deploy Function Code
 
@@ -93,7 +93,6 @@ az deployment group create \
   --subscription central-subscription-id \
   --template-file main.bicep \
   --parameters main.bicepparam \
-  --parameters qualysPod='US2' \
   --parameters qualysAccessToken='your-access-token'
 ```
 
@@ -241,7 +240,6 @@ az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file main.bicep \
   --parameters main.bicepparam \
-  --parameters qualysPod='US2' \
   --parameters qualysAccessToken='your-access-token' \
   --mode Incremental
 ```

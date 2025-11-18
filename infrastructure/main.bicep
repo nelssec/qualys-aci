@@ -23,12 +23,11 @@ param scanCacheHours int = 24
   'EP3'
 ])
 param functionAppSku string = 'Y1'
-var storageAccountName = '${replace(namePrefix, '-', '')}${uniqueString(resourceGroup().id)}'
+var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
 var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
 var keyVaultName = '${namePrefix}-kv-${uniqueString(resourceGroup().id)}'
-var eventGridTopicName = '${namePrefix}-events-${uniqueString(resourceGroup().id)}'
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -66,17 +65,13 @@ resource scanResultsContainer 'Microsoft.Storage/storageAccounts/blobServices/co
 }
 
 resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
-  name: '${storageAccountName}/default'
-  dependsOn: [
-    storageAccount
-  ]
+  parent: storageAccount
+  name: 'default'
 }
 
 resource scanMetadataTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
-  name: '${storageAccountName}/default/ScanMetadata'
-  dependsOn: [
-    tableService
-  ]
+  parent: tableService
+  name: 'ScanMetadata'
 }
 
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {

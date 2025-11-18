@@ -52,7 +52,6 @@ az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file main.bicep \
   --parameters main.bicepparam \
-  --parameters qualysPod='US2' \
   --parameters qualysAccessToken='your-access-token'
 
 # Deploy function code
@@ -76,7 +75,6 @@ az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file main.bicep \
   --parameters main.bicepparam \
-  --parameters qualysPod='US2' \
   --parameters qualysAccessToken='your-access-token'
 
 # Step 2: Deploy function code
