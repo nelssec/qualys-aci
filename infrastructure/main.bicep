@@ -23,7 +23,7 @@ param scanCacheHours int = 24
   'EP3'
 ])
 param functionAppSku string = 'Y1'
-var storageAccountName = '${replace(namePrefix, '-', '')}${uniqueString(resourceGroup().id)}'
+var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
 var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
