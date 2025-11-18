@@ -304,11 +304,13 @@ class QScannerACI:
             logging.info(f'Fetching ACR admin credentials for {self.acr_name}')
 
             # Ensure admin is enabled
-            self.acr_client.registries.update(
+            from azure.mgmt.containerregistry.models import RegistryUpdateParameters
+            update_params = RegistryUpdateParameters(admin_user_enabled=True)
+            self.acr_client.registries.begin_update(
                 resource_group_name=self.resource_group,
                 registry_name=self.acr_name,
-                registry_update_parameters={'admin_user_enabled': True}
-            )
+                registry_update_parameters=update_params
+            ).result()
 
             # Get admin credentials
             credentials = self.acr_client.registries.list_credentials(
