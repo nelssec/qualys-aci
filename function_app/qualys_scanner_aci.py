@@ -361,7 +361,7 @@ class QScannerACI:
         """
         Build qscanner command for container
 
-        The qscanner Docker image has qscanner as its ENTRYPOINT, so we just pass arguments.
+        The qscanner binary is located at /opt/qualys/qscanner in the image.
         Based on: docker run --env QUALYS_ACCESS_TOKEN=$TOKEN qualys/qscanner:latest image image:tag --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls
 
         Args:
@@ -369,9 +369,10 @@ class QScannerACI:
             custom_tags: Optional tags for tracking
 
         Returns:
-            Command as list for ACI container (arguments only, not binary name)
+            Command as list for ACI container
         """
         cmd_parts = [
+            '/opt/qualys/qscanner',  # qscanner binary location
             'image',              # qscanner subcommand
             image_id,             # Full image name with registry
             '--pod', self.qualys_pod,
