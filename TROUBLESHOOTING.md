@@ -50,8 +50,10 @@ echo "..."
 **Update Token:**
 ```bash
 export QUALYS_TOKEN="your-token-here"
-./update.sh
+./update-token.sh
 ```
+
+Note: Requires Key Vault Secrets Officer role. If you get permission errors, see "Key Vault Permission Denied" section below.
 
 **Verify POD Setting:**
 ```bash
@@ -100,6 +102,44 @@ az container delete --resource-group "$RG" --name "$TEST_CONTAINER" --yes
 ```
 
 ## Common Issues
+
+### Key Vault Permission Denied
+
+If you get permission errors when trying to update the Qualys token in Key Vault:
+
+```
+ERROR: Caller is not authorized to perform action on resource
+Action: 'Microsoft.KeyVault/vaults/secrets/setSecret/action'
+```
+
+The Key Vault uses RBAC authorization. Only users with the "Key Vault Secrets Officer" role can update secrets.
+
+**Options to fix:**
+
+1. Grant yourself the role (requires Owner or User Access Administrator):
+```bash
+RG="qualys-scanner-rg"
+KV_NAME=$(az keyvault list --resource-group "$RG" --query "[0].name" -o tsv)
+USER_ID=$(az ad signed-in-user show --query id -o tsv)
+
+az role assignment create \
+  --role "Key Vault Secrets Officer" \
+  --assignee "$USER_ID" \
+  --scope "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RG/providers/Microsoft.KeyVault/vaults/$KV_NAME"
+```
+
+2. Update via Azure Portal:
+   - Navigate to Key Vault: Secrets > QualysAccessToken
+   - Click "New Version"
+   - Paste new token and save
+
+3. Redeploy infrastructure (will update token during deployment):
+```bash
+export QUALYS_TOKEN='your-new-token'
+./deploy.sh
+```
+
+The Function App's managed identity already has the "Key Vault Secrets User" role (read-only), which is sufficient for runtime operation. The Secrets Officer role is only needed for manual token updates.
 
 ### QScanner Containers in Logs
 
