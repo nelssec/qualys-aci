@@ -48,8 +48,36 @@ echo ""
 
 # Step 3: Deploy function code
 echo "[3/4] Deploying function code"
+echo "This may take 5-10 minutes..."
 cd function_app
-func azure functionapp publish "$FUNCTION_APP" --python --build remote
+
+# Deploy with timeout handling
+# Note: func publish can timeout waiting for SCM but deployment often succeeds
+if timeout 600 func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
+  echo "Function code deployed successfully"
+else
+  EXIT_CODE=$?
+  if [ $EXIT_CODE -eq 124 ]; then
+    echo ""
+    echo "WARNING: Deployment timed out waiting for SCM, but may have succeeded in background"
+    echo "Waiting 30 seconds for deployment to complete..."
+    sleep 30
+
+    # Check if function app is running
+    STATE=$(az functionapp show --resource-group "$RG" --name "$FUNCTION_APP" --query "state" -o tsv)
+    if [ "$STATE" = "Running" ]; then
+      echo "Function app is running - deployment likely succeeded"
+    else
+      echo "Function app state: $STATE - you may need to restart it"
+      echo "Run: az functionapp restart --resource-group $RG --name $FUNCTION_APP"
+    fi
+  else
+    echo "ERROR: Function deployment failed with exit code $EXIT_CODE"
+    cd ..
+    exit 1
+  fi
+fi
+
 cd ..
 echo ""
 
@@ -74,4 +102,5 @@ echo ""
 echo "Subscription-wide monitoring is now active."
 echo "All container deployments across this subscription will be automatically scanned."
 echo ""
-echo "Test with: ./test-automation.sh"
+echo "Test by deploying a container:"
+echo "  az container create --resource-group $RG --name test-scan --image mcr.microsoft.com/dotnet/runtime:8.0 --restart-policy Never"
