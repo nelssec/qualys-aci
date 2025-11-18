@@ -25,14 +25,12 @@ echo "Qualys POD: $QUALYS_POD"
 echo "Function SKU: $FUNCTION_SKU"
 echo ""
 
-echo "[1/4] Creating resource group"
-az group create --name "$RG" --location "$LOCATION" --output none
-
-echo "[2/4] Deploying infrastructure"
-az deployment group create \
-  --resource-group "$RG" \
+echo "[1/3] Deploying infrastructure"
+az deployment sub create \
+  --location "$LOCATION" \
   --template-file infrastructure/main.bicep \
   --parameters location="$LOCATION" \
+  --parameters resourceGroupName="$RG" \
   --parameters qualysPod="$QUALYS_POD" \
   --parameters qualysAccessToken="$QUALYS_ACCESS_TOKEN" \
   --parameters functionAppSku="$FUNCTION_SKU" \
@@ -41,20 +39,10 @@ az deployment group create \
   --output none
 
 FUNCTION_APP=$(az functionapp list --resource-group "$RG" --query "[0].name" -o tsv)
-FUNCTION_APP_PRINCIPAL=$(az functionapp show --resource-group "$RG" --name "$FUNCTION_APP" --query "identity.principalId" -o tsv)
 echo "Function App: $FUNCTION_APP"
 echo ""
 
-echo "Assigning subscription-level Contributor role to function app..."
-az role assignment create \
-  --role "Contributor" \
-  --assignee-object-id "$FUNCTION_APP_PRINCIPAL" \
-  --assignee-principal-type ServicePrincipal \
-  --scope "/subscriptions/$(az account show --query id -o tsv)" \
-  --output none
-echo ""
-
-echo "[3/4] Deploying function code"
+echo "[2/3] Deploying function code"
 echo "This may take 5-10 minutes..."
 cd function_app
 
@@ -85,7 +73,7 @@ fi
 cd ..
 echo ""
 
-echo "[4/4] Deploying Event Grid subscriptions"
+echo "[3/3] Deploying Event Grid subscriptions"
 EVENT_GRID_TOPIC=$(az eventgrid system-topic list --resource-group "$RG" --query "[0].name" -o tsv)
 az deployment group create \
   --resource-group "$RG" \

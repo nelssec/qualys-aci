@@ -52,14 +52,27 @@ export QUALYS_ACCESS_TOKEN="your-qualys-access-token"
 ./deploy.sh
 ```
 
-This single command:
+This deploys everything at subscription scope:
 - Creates resource group
-- Deploys infrastructure (Function App, Storage, ACR, Key Vault, Event Grid)
-- Imports qscanner image to ACR
+- Deploys all infrastructure with subscription-level permissions
 - Deploys function code
 - Configures Event Grid subscriptions
 
 Deployment takes 5-10 minutes.
+
+**Alternative: Pure Bicep Deployment (no script needed)**
+
+```bash
+az deployment sub create \
+  --location eastus \
+  --template-file infrastructure/main.bicep \
+  --parameters location=eastus \
+  --parameters resourceGroupName=qualys-scanner-rg \
+  --parameters qualysPod=US2 \
+  --parameters qualysAccessToken="your-token"
+```
+
+Then deploy function code: `cd function_app && func azure functionapp publish <function-app-name>`
 
 ### 3. Verify
 
@@ -281,14 +294,23 @@ az acr import \
 
 ## Deployment Scopes
 
-**Subscription-Wide (Default):**
-This deployment monitors ALL container deployments across the entire subscription, not just one resource group.
+**Subscription-Wide (Native Bicep):**
+The Bicep template deploys at subscription scope with native subscription-level RBAC. It monitors ALL container deployments across the entire subscription in all resource groups.
+
+To deploy to a different subscription:
+```bash
+az deployment sub create \
+  --location eastus \
+  --subscription "<subscription-id>" \
+  --template-file infrastructure/main.bicep \
+  --parameters qualysPod=US2 \
+  --parameters qualysAccessToken="your-token"
+```
 
 **Multi-Subscription / Tenant-Wide:**
-To monitor multiple subscriptions or an entire tenant, deploy this solution once per subscription. Each deployment will monitor its respective subscription. For centralized management across subscriptions, consider:
-- Azure Lighthouse for multi-tenant management
-- Azure Policy to enforce deployment across subscriptions
-- Management Group-level Event Grid (requires custom configuration)
+Deploy once per subscription. Each deployment monitors its subscription independently. For centralized management:
+- Use Azure Lighthouse for multi-tenant scenarios
+- Use Azure Policy to enforce deployment across subscriptions
 
 ## Security
 
