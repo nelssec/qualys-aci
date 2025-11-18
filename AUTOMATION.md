@@ -50,29 +50,16 @@ Container Deployment → Event Grid → Azure Function → QScanner (ACI) → Qu
 
 ## Deployment
 
-Deploy infrastructure and configure token:
+Single command deployment:
 
 ```bash
-az group create --name qualys-scanner-rg --location eastus
-
-az deployment group create \
-  --resource-group qualys-scanner-rg \
-  --template-file infrastructure/main.bicep \
-  --parameters infrastructure/main.bicepparam \
-  --parameters qualysAccessToken='your-token-here'
-
-cd function_app
-func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
-cd ..
-
-az deployment group create \
-  --resource-group qualys-scanner-rg \
-  --template-file infrastructure/eventgrid.bicep \
-  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
-  --parameters eventGridTopicName=$(az eventgrid system-topic list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+export QUALYS_TOKEN='your-token'
+./deploy.sh
 ```
 
-See DEPLOYMENT.md for detailed instructions.
+This orchestrates: infrastructure deployment, function code deployment, Event Grid subscriptions.
+
+See DEPLOYMENT.md for manual deployment steps or CI/CD integration.
 
 ## Updating Token
 

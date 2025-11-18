@@ -68,7 +68,7 @@ If quota is 0, request increase via Azure Portal or use different SKU (EP1, P1v3
 
 ### Single Subscription
 
-Configure `infrastructure/deploy.bicepparam`:
+Configure `infrastructure/main.bicepparam`:
 
 ```bicep
 param qualysPod = 'US2'
@@ -84,7 +84,7 @@ export QUALYS_TOKEN='your-token'
 ./deploy.sh
 ```
 
-This orchestrates: infrastructure deployment, function code deployment, Event Grid subscription deployment.
+This orchestrates: infrastructure deployment, function code deployment, Event Grid subscriptions.
 
 ### Tenant-Wide Monitoring
 
@@ -114,10 +114,9 @@ For CI/CD pipelines or manual control:
 az group create --name qualys-scanner-rg --location eastus
 az deployment group create \
   --resource-group qualys-scanner-rg \
-  --template-file infrastructure/deploy.bicep \
-  --parameters infrastructure/deploy.bicepparam \
-  --parameters qualysAccessToken='your-token' \
-  --parameters deployEventGridSubscriptions=false
+  --template-file infrastructure/main.bicep \
+  --parameters @infrastructure/main.bicepparam \
+  --parameters qualysAccessToken='your-token'
 
 # Deploy function code
 cd function_app
@@ -127,10 +126,9 @@ cd ..
 # Deploy Event Grid subscriptions
 az deployment group create \
   --resource-group qualys-scanner-rg \
-  --template-file infrastructure/deploy.bicep \
-  --parameters infrastructure/deploy.bicepparam \
-  --parameters qualysAccessToken='your-token' \
-  --parameters deployEventGridSubscriptions=true
+  --template-file infrastructure/eventgrid.bicep \
+  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
+  --parameters eventGridTopicName=$(az eventgrid system-topic list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
 ```
 
 ## Configuration
