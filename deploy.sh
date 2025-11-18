@@ -7,6 +7,10 @@ set -e
 RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
 LOCATION="${LOCATION:-eastus}"
 QUALYS_TOKEN="${QUALYS_TOKEN:-}"
+QUALYS_POD="${QUALYS_POD:-US2}"
+FUNCTION_SKU="${FUNCTION_SKU:-EP1}"
+NOTIFICATION_EMAIL="${NOTIFICATION_EMAIL:-}"
+SCAN_CACHE_HOURS="${SCAN_CACHE_HOURS:-24}"
 
 if [ -z "$QUALYS_TOKEN" ]; then
   echo "ERROR: QUALYS_TOKEN environment variable not set"
@@ -17,6 +21,8 @@ fi
 echo "Deploying Qualys Container Scanner"
 echo "Resource Group: $RG"
 echo "Location: $LOCATION"
+echo "Qualys POD: $QUALYS_POD"
+echo "Function SKU: $FUNCTION_SKU"
 echo ""
 
 # Step 1: Create resource group
@@ -28,8 +34,12 @@ echo "[2/4] Deploying infrastructure (Function App, Storage, Key Vault, Event Gr
 az deployment group create \
   --resource-group "$RG" \
   --template-file infrastructure/main.bicep \
-  --parameters @infrastructure/main.bicepparam \
+  --parameters location="$LOCATION" \
+  --parameters qualysPod="$QUALYS_POD" \
   --parameters qualysAccessToken="$QUALYS_TOKEN" \
+  --parameters functionAppSku="$FUNCTION_SKU" \
+  --parameters notificationEmail="$NOTIFICATION_EMAIL" \
+  --parameters scanCacheHours="$SCAN_CACHE_HOURS" \
   --output none
 
 FUNCTION_APP=$(az functionapp list --resource-group "$RG" --query "[0].name" -o tsv)
