@@ -15,27 +15,39 @@ from storage_handler import StorageHandler
 
 
 def main(event: func.EventGridEvent):
-    logging.info(f'Python EventGrid trigger processed an event: {event.get_json()}')
-
     try:
         event_data = event.get_json()
         event_type = event.event_type
         subject = event.subject
 
+        # Log ALL events for debugging
+        logging.info(f'=== EVENT GRID EVENT RECEIVED ===')
         logging.info(f'Event Type: {event_type}')
         logging.info(f'Subject: {subject}')
+        logging.info(f'Event Data Keys: {list(event_data.keys())}')
+        logging.info(f'Full Event: {json.dumps(event_data, indent=2)}')
 
-        event_subscription_id = event_data.get('subscriptionId')
-        if event_subscription_id:
-            logging.info(f'Event from subscription: {event_subscription_id}')
+        # Filter for container events (moved from Event Grid advanced filters)
+        # Check if this is a container-related event
+        resource_provider = event_data.get('data', {}).get('resourceProvider', '')
+        operation_name = event_data.get('data', {}).get('operationName', '')
+
+        logging.info(f'Resource Provider: {resource_provider}')
+        logging.info(f'Operation Name: {operation_name}')
 
         if 'Microsoft.ContainerInstance/containerGroups' in subject:
             container_type = 'ACI'
         elif 'Microsoft.App/containerApps' in subject:
             container_type = 'ACA'
         else:
-            logging.warning(f'Unknown container type in subject: {subject}')
+            logging.info(f'Skipping non-container event (subject: {subject})')
             return
+
+        logging.info(f'Processing {container_type} container event')
+
+        event_subscription_id = event_data.get('subscriptionId')
+        if event_subscription_id:
+            logging.info(f'Event from subscription: {event_subscription_id}')
 
         images = extract_images(event_data, container_type)
 
