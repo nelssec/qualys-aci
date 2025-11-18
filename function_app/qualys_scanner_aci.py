@@ -299,8 +299,8 @@ class QScannerACI:
         """
         Build qscanner command for container
 
-        Based on: docker run --env QUALYS_ACCESS_TOKEN=$TOKEN qualys/qscanner:latest
-                  image image:tag --pod <pod> --skip-verify-tls
+        Based on: ./qscanner image customer-service:3 --pod US2 --access-token ****
+                  --scan-types os,sca,secret --format json --skip-verify-tls
 
         Args:
             image_id: Full image identifier to scan (e.g., mcr.microsoft.com/image:tag)
@@ -313,9 +313,9 @@ class QScannerACI:
             'image',              # qscanner subcommand
             image_id,             # Full image name with registry
             '--pod', self.qualys_pod,
-            '--skip-verify-tls',  # Skip TLS verification for registries
-            '--mode', 'scan-only', # Upload results to Qualys platform
-            '--format', 'json'    # JSON output for parsing
+            '--scan-types', 'os,sca,secret',  # Scan types: OS packages, SCA, secrets
+            '--format', 'json',   # JSON output for parsing
+            '--skip-verify-tls'   # Skip TLS verification for registries
         ]
 
         # Add custom tags for tracking
