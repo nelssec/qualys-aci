@@ -198,6 +198,10 @@ Scans appear 2-5 minutes after upload.
 ### Azure Storage
 
 ```bash
+# Quick view with helper script
+./view-scan-results.sh
+
+# Manual query
 RG="qualys-scanner-rg"
 STORAGE=$(az storage account list --resource-group $RG --query "[0].name" -o tsv)
 
@@ -211,11 +215,15 @@ az storage blob list \
 ### Application Insights
 
 ```bash
+# Quick view with helper script
+./view-logs.sh
+
+# Manual query
 RG="qualys-scanner-rg"
-APP_INSIGHTS=$(az monitor app-insights component list --resource-group $RG --query "[0].name" -o tsv)
+APP_INSIGHTS_ID=$(az monitor app-insights component list --resource-group $RG --query "[0].appId" -o tsv)
 
 az monitor app-insights query \
-  --app "$APP_INSIGHTS" \
+  --app "$APP_INSIGHTS_ID" \
   --analytics-query "traces
     | where timestamp > ago(1h)
     | where operation_Name == 'EventProcessor'
@@ -243,49 +251,20 @@ export QUALYS_TOKEN='your-token'
 
 ## Troubleshooting
 
-### Scans Not Triggering
-
-Check Event Grid subscriptions:
+Quick diagnostics:
 
 ```bash
-az eventgrid system-topic event-subscription list \
-  --resource-group qualys-scanner-rg \
-  --system-topic-name $(az eventgrid system-topic list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+./view-logs.sh          # View Application Insights logs
+./view-scan-results.sh  # View scan results from Azure Storage
 ```
 
-View Function logs:
+For comprehensive troubleshooting, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
-```bash
-az functionapp log tail \
-  --resource-group qualys-scanner-rg \
-  --name $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
-```
+Common issues:
 
-### Scans Failing
-
-Check Qualys token:
-
-```bash
-az keyvault secret show \
-  --vault-name $(az keyvault list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
-  --name QualysAccessToken \
-  --query "value" -o tsv
-```
-
-Update token:
-
-```bash
-export QUALYS_TOKEN='your-token'
-./setup-automation.sh  # Debug script
-```
-
-Check qscanner container logs:
-
-```bash
-az container logs \
-  --resource-group qualys-scanner-rg \
-  --name <qscanner-container-name>
-```
+**Scans not triggering**: Check Event Grid subscriptions are active
+**Scans failing**: Verify Qualys token is valid and not expired
+**Results not in Qualys**: Check POD setting and token permissions
 
 ## Updating
 

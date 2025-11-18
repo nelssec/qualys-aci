@@ -59,6 +59,11 @@ def main(event: func.EventGridEvent):
         logging.info(f'Resource Group: {resource_group}')
         logging.info(f'Container Name: {container_name}')
 
+        # Skip qscanner containers to prevent infinite loops
+        if container_name.startswith('qscanner-'):
+            logging.info(f'Skipping qscanner container: {container_name}')
+            return
+
         # Fetch container details from Azure
         images = fetch_container_images(event_subscription_id, resource_group, container_name, container_type)
 
