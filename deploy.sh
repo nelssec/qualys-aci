@@ -71,5 +71,7 @@ echo "Key Vault: $(az keyvault list --resource-group $RG --query "[0].name" -o t
 echo "Storage: $(az storage account list --resource-group $RG --query "[0].name" -o tsv)"
 echo "ACR: $(az acr list --resource-group $RG --query "[0].name" -o tsv)"
 echo ""
-echo "Container deployments in this resource group will now be automatically scanned."
+echo "Subscription-wide monitoring is now active."
+echo "All container deployments across this subscription will be automatically scanned."
+echo ""
 echo "Test with: ./test-automation.sh"

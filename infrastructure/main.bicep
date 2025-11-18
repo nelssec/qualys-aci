@@ -280,8 +280,8 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 }
 
 resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, functionApp.id, 'Contributor')
-  scope: resourceGroup()
+  name: guid(subscription().id, functionApp.id, 'Contributor')
+  scope: subscription()
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
     principalId: functionApp.identity.principalId
@@ -299,14 +299,14 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-// Event Grid system topic for resource group events
+// Event Grid system topic for subscription-wide container monitoring
 // Event subscriptions are deployed separately after function code deployment
 resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
   name: '${namePrefix}-aci-topic'
   location: 'global'
   properties: {
-    source: resourceGroup().id
-    topicType: 'Microsoft.Resources.ResourceGroups'
+    source: subscription().id
+    topicType: 'Microsoft.Resources.Subscriptions'
   }
 }
 

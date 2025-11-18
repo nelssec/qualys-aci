@@ -4,7 +4,7 @@ Automated vulnerability scanning for Azure Container Instances (ACI) and Azure C
 
 ## Overview
 
-This solution automatically scans container images deployed to Azure using Event Grid triggers and Qualys qscanner. Scan results are uploaded to Qualys Cloud Platform and stored locally in Azure Storage.
+This solution automatically scans all container images deployed across your Azure subscription using Event Grid triggers and Qualys qscanner. Scan results are uploaded to Qualys Cloud Platform and stored locally in Azure Storage.
 
 ## Architecture
 
@@ -13,13 +13,19 @@ Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Sc
 ```
 
 **Components:**
-- **Event Grid**: Monitors container deployments
+- **Event Grid**: Monitors container deployments across entire subscription
 - **Azure Function**: Processes events and orchestrates scans
 - **Azure Container Instances**: Runs qscanner in temporary containers
 - **Azure Container Registry**: Hosts qscanner image
 - **Azure Storage**: Stores scan results and metadata
 - **Azure Key Vault**: Securely stores Qualys credentials
 - **Scan Caching**: 24-hour cache prevents duplicate scans
+
+**Monitoring Scope:**
+- Scans ALL container deployments across the subscription
+- Works across all resource groups
+- Supports both ACI and ACA containers
+- Automatic detection of new containers via Event Grid
 
 ## Prerequisites
 
@@ -75,18 +81,19 @@ Expected: 2 active subscriptions (aci-container-deployments, aca-container-deplo
 
 ## How It Works
 
-1. Container deployed to ACI or ACA
-2. Event Grid captures deployment event
+1. Container deployed to ACI or ACA anywhere in subscription
+2. Event Grid captures deployment event (subscription-wide monitoring)
 3. EventProcessor function triggered
 4. Function checks scan cache (24-hour window)
 5. If not cached, creates temporary ACI container with qscanner
 6. qscanner pulls and scans the image
-7. Results uploaded to Qualys Cloud Platform
+7. Results uploaded to Qualys Cloud Platform with Azure metadata
 8. Results stored in Azure Storage
 9. qscanner container deleted
 10. Scan metadata cached
 
 **Scan Duration**: 2-5 minutes for typical images
+**Scope**: ALL resource groups in the subscription
 
 ## Viewing Results
 
@@ -223,20 +230,28 @@ az acr import \
   --image qualys/qscanner:latest
 ```
 
-## Tenant-Wide Deployment
+## Deployment Scopes
 
-For monitoring all subscriptions in your tenant, see [TENANT_WIDE.md](TENANT_WIDE.md).
+**Subscription-Wide (Default):**
+This deployment monitors ALL container deployments across the entire subscription, not just one resource group.
+
+**Multi-Subscription / Tenant-Wide:**
+To monitor multiple subscriptions or an entire tenant, deploy this solution once per subscription. Each deployment will monitor its respective subscription. For centralized management across subscriptions, consider:
+- Azure Lighthouse for multi-tenant management
+- Azure Policy to enforce deployment across subscriptions
+- Management Group-level Event Grid (requires custom configuration)
 
 ## Security
 
 - **Credentials**: Qualys token in Azure Key Vault with RBAC
 - **Authentication**: Function App managed identity (no stored credentials)
 - **RBAC Roles**:
-  - Contributor (resource group scope) - create/delete ACI containers
+  - Contributor (subscription scope) - scan containers across all resource groups
   - Key Vault Secrets User - read Qualys token
   - AcrPull - pull qscanner image
 - **Network**: Azure Services only
 - **Encryption**: Soft delete enabled on Key Vault
+- **Principle of Least Privilege**: Function app only has read access to containers, write access limited to creating temporary scan containers in scanner resource group
 
 ## Cost
 
@@ -264,7 +279,8 @@ Typical monthly cost for moderate usage:
 - Table: `ScanMetadata` (cache and metadata)
 
 **Event Grid**:
-- System Topic: Resource Group events
+- System Topic: Subscription-wide events
+- Scope: All resource groups in subscription
 - Filters: ACI and ACA deployments
 - Schema: Event Grid Schema
 
