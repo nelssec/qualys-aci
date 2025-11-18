@@ -12,8 +12,9 @@ from azure.mgmt.containerinstance import ContainerInstanceManagementClient
 from azure.mgmt.containerinstance.models import (
     ContainerGroup, Container, ContainerGroupRestartPolicy,
     ResourceRequirements, ResourceRequests, EnvironmentVariable,
-    OperatingSystemTypes
+    OperatingSystemTypes, ImageRegistryCredential
 )
+from azure.mgmt.containerregistry import ContainerRegistryManagementClient
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import HttpResponseError
 
@@ -43,11 +44,25 @@ class QScannerACI:
             subscription_id=self.subscription_id
         )
 
+        # ACR client for fetching credentials
+        self.acr_client = ContainerRegistryManagementClient(
+            credential=self.credential,
+            subscription_id=self.subscription_id
+        )
+
         # qscanner configuration
         self.qscanner_image = os.environ.get('QSCANNER_IMAGE', 'qualys/qscanner:latest')
         self.qualys_pod = os.environ.get('QUALYS_POD')
         self.qualys_access_token = os.environ.get('QUALYS_ACCESS_TOKEN')
         self.scan_timeout = int(os.environ.get('SCAN_TIMEOUT', '1800'))
+
+        # Parse ACR info from qscanner image if it's from ACR
+        self.acr_server = None
+        self.acr_name = None
+        if '.azurecr.io' in self.qscanner_image:
+            self.acr_server = self.qscanner_image.split('/')[0]
+            self.acr_name = self.acr_server.split('.')[0]
+            logging.info(f'QScanner image is from ACR: {self.acr_server}')
 
     def scan_image(self, registry: str, repository: str, tag: str = 'latest',
                    digest: Optional[str] = None, custom_tags: Optional[Dict] = None) -> Dict:
@@ -146,12 +161,17 @@ class QScannerACI:
             environment_variables=env_vars
         )
 
+        # Get ACR credentials if qscanner image is from ACR
+        acr_credentials = self._get_acr_credentials()
+        image_registry_credentials = [acr_credentials] if acr_credentials else None
+
         # Container group configuration
         container_group = ContainerGroup(
             location=self.location,
             containers=[container],
             os_type=OperatingSystemTypes.linux,
             restart_policy=ContainerGroupRestartPolicy.never,  # Run once and stop
+            image_registry_credentials=image_registry_credentials,  # ACR credentials
             tags={
                 'purpose': 'qscanner',
                 'image': image_id,
@@ -268,6 +288,48 @@ class QScannerACI:
 
         except HttpResponseError as e:
             logging.warning(f'Failed to delete container group: {str(e)}')
+
+    def _get_acr_credentials(self) -> Optional[ImageRegistryCredential]:
+        """
+        Get ACR credentials for pulling qscanner image
+
+        Returns:
+            ImageRegistryCredential if qscanner image is from ACR, None otherwise
+        """
+        if not self.acr_server or not self.acr_name:
+            logging.info('QScanner image is not from ACR, no credentials needed')
+            return None
+
+        try:
+            logging.info(f'Fetching ACR admin credentials for {self.acr_name}')
+
+            # Ensure admin is enabled
+            self.acr_client.registries.update(
+                resource_group_name=self.resource_group,
+                registry_name=self.acr_name,
+                registry_update_parameters={'admin_user_enabled': True}
+            )
+
+            # Get admin credentials
+            credentials = self.acr_client.registries.list_credentials(
+                resource_group_name=self.resource_group,
+                registry_name=self.acr_name
+            )
+
+            username = credentials.username
+            password = credentials.passwords[0].value
+
+            logging.info(f'Retrieved ACR credentials for {self.acr_server}')
+
+            return ImageRegistryCredential(
+                server=self.acr_server,
+                username=username,
+                password=password
+            )
+
+        except Exception as e:
+            logging.error(f'Failed to get ACR credentials: {str(e)}')
+            raise
 
     def _generate_container_name(self, registry: str, repository: str, tag: str) -> str:
         """
