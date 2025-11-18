@@ -21,54 +21,30 @@ az provider register --namespace Microsoft.Web
 
 ## Pre-Deployment Validation
 
-Run the validation script to check prerequisites before deploying:
+Before deploying, verify you have the required permissions and quota.
+
+Check Y1 VM quota (required for Consumption plan):
 
 ```bash
-cd infrastructure
-bash pre-deploy-check.sh eastus
+az vm list-usage --location eastus --query "[?name.value=='Y1'].{Current:currentValue,Limit:limit}"
 ```
 
-This checks:
-- Azure CLI version
-- Login status and permissions
-- Resource provider registration
-- Y1 VM quota (for Consumption plan)
-- Azure Functions Core Tools
-- Parameter file configuration
+If quota is 0, either request increase via Azure Portal or use a different SKU (EP1, P1v3).
 
-Fix any errors before proceeding with deployment.
+Verify you have Contributor role on the subscription:
+
+```bash
+az role assignment list \
+  --assignee $(az account show --query user.name -o tsv) \
+  --scope /subscriptions/$(az account show --query id -o tsv) \
+  --query "[?roleDefinitionName=='Contributor' || roleDefinitionName=='Owner']"
+```
 
 ## Deployment Options
 
-### Recommended: Automated Deployment
-
-Use the automated deployment script that handles the two-step process:
-
-```bash
-cd infrastructure
-
-bash deploy.sh \
-  --resource-group qualys-scanner-rg \
-  --location eastus \
-  --qualys-token 'your-access-token'
-```
-
-This script automatically:
-1. Validates prerequisites
-2. Creates resource group
-3. Deploys infrastructure
-4. Deploys function code
-5. Redeploys infrastructure to complete Event Grid setup
-
-For other subscriptions, add `--subscription <subscription-id>`.
-
-Skip to "Verify Deployment" section after using this script.
-
-### Manual Deployment
-
 ### Option 1: Single Subscription Monitoring
 
-Deploy scanner to monitor a single subscription.
+Deploy scanner to monitor a single subscription via pure Bicep deployment.
 
 #### Step 1: Configure Parameters
 
@@ -115,8 +91,10 @@ FUNCTION_APP=$(az deployment group show \
   --query properties.outputs.functionAppName.value -o tsv)
 
 # Deploy function code
-func azure functionapp publish $FUNCTION_APP
+func azure functionapp publish $FUNCTION_APP --build remote
 ```
+
+Event Grid subscriptions include automatic retry logic and activate once function code is deployed.
 
 ### Option 2: Tenant-Wide Monitoring
 
@@ -153,7 +131,7 @@ FUNCTION_APP=$(az deployment group show \
   --name main \
   --query properties.outputs.functionAppName.value -o tsv)
 
-func azure functionapp publish $FUNCTION_APP
+func azure functionapp publish $FUNCTION_APP --build remote
 ```
 
 #### Step 3: Get Management Group ID
@@ -433,12 +411,25 @@ Endpoint validation: Destination endpoint not found
 ```
 
 **Solution:**
-This occurs when Event Grid tries to validate the function endpoint before the function code is deployed.
+This can occur when Event Grid validates the endpoint before function code is deployed. Event Grid subscriptions include automatic retry logic with up to 30 attempts over 24 hours.
 
-**Fix:** Use the automated deployment script which handles this automatically, or follow the two-step manual process:
-1. Deploy infrastructure (Event Grid may show warnings)
-2. Deploy function code
-3. Redeploy infrastructure (Event Grid subscriptions will validate successfully)
+**Fix:** Deploy the function code and Event Grid will automatically retry validation and activate the subscription. No manual redeployment needed.
+
+```bash
+cd function_app
+FUNCTION_APP=$(az deployment group show --resource-group qualys-scanner-rg --name main --query properties.outputs.functionAppName.value -o tsv)
+func azure functionapp publish $FUNCTION_APP --build remote
+```
+
+Check subscription status after deployment:
+
+```bash
+az eventgrid system-topic event-subscription show \
+  --resource-group qualys-scanner-rg \
+  --system-topic-name qualys-scanner-aci-topic \
+  --name aci-container-deployments \
+  --query provisioningState
+```
 
 #### 5. Resource Naming Conflicts
 

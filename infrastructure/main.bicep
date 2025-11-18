@@ -5,19 +5,26 @@ param location string = resourceGroup().location
 @description('Prefix for resource names. Keep under 20 chars to ensure generated names fit Azure constraints.')
 param namePrefix string = 'qualys-scanner'
 
+@description('Qualys POD identifier (e.g., US2, US3, EU1)')
 param qualysPod string
 
 @secure()
+@description('Qualys API access token for container scanning')
 param qualysAccessToken string
 
+@description('Optional email for vulnerability notifications')
 param notificationEmail string = ''
 
 @allowed([
   'CRITICAL'
   'HIGH'
 ])
+@description('Minimum severity level for notifications')
 param notifySeverityThreshold string = 'HIGH'
 
+@minValue(1)
+@maxValue(168)
+@description('Hours to cache scan results before rescanning')
 param scanCacheHours int = 24
 
 @allowed([
@@ -33,7 +40,11 @@ param scanCacheHours int = 24
   'P2v4'
   'P3v4'
 ])
+@description('Function App SKU. Y1=Consumption (requires Y1 VM quota), EP=ElasticPremium, P=Premium')
 param functionAppSku string = 'Y1'
+
+@description('URL to function app deployment package (zip file). Leave empty to skip automatic deployment.')
+param functionPackageUrl string = ''
 
 // Resource naming with Azure constraints
 // Storage: 3-24 chars, alphanumeric only
@@ -166,7 +177,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
     reserved: true
     siteConfig: {
       linuxFxVersion: 'Python|3.11'
-      appSettings: [
+      appSettings: concat([
         {
           name: 'AzureWebJobsStorage'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
@@ -239,7 +250,12 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'SCAN_TIMEOUT'
           value: '1800'
         }
-      ]
+      ], !empty(functionPackageUrl) ? [
+        {
+          name: 'WEBSITE_RUN_FROM_PACKAGE'
+          value: functionPackageUrl
+        }
+      ] : [])
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
       pythonVersion: '3.11'
@@ -266,6 +282,10 @@ resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2
     principalType: 'ServicePrincipal'
   }
 }
+
+// Event Grid subscriptions have built-in retry logic for endpoint validation
+// When function code is deployed after infrastructure, Event Grid automatically
+// retries validation and the subscription becomes active (no manual intervention needed)
 
 resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
   name: '${namePrefix}-aci-topic'
