@@ -2,6 +2,8 @@
 
 Event-driven container image scanning for Azure Container Instances and Azure Container Apps using Qualys qscanner.
 
+**Quick Start**: See **[AUTOMATION.md](AUTOMATION.md)** for setup and testing the automated scanning.
+
 ## Overview
 
 This solution automatically scans container images when they're deployed to ACI or ACA. When a deployment event occurs, an Azure Function spins up a temporary container running qscanner, performs the scan, and stores the results. The scan container is deleted after completion.
