@@ -29,11 +29,14 @@ def main(event: func.EventGridEvent):
 
         # Filter for container events (moved from Event Grid advanced filters)
         # Check if this is a container-related event
-        resource_provider = event_data.get('data', {}).get('resourceProvider', '')
-        operation_name = event_data.get('data', {}).get('operationName', '')
+        # NOTE: These fields are at top level, not under 'data'
+        resource_provider = event_data.get('resourceProvider', '')
+        operation_name = event_data.get('operationName', '')
+        resource_uri = event_data.get('resourceUri', '')
 
         logging.info(f'Resource Provider: {resource_provider}')
         logging.info(f'Operation Name: {operation_name}')
+        logging.info(f'Resource URI: {resource_uri}')
 
         if 'Microsoft.ContainerInstance/containerGroups' in subject:
             container_type = 'ACI'
@@ -49,10 +52,18 @@ def main(event: func.EventGridEvent):
         if event_subscription_id:
             logging.info(f'Event from subscription: {event_subscription_id}')
 
-        images = extract_images(event_data, container_type)
+        # Extract resource group and container name from the resource URI
+        resource_group = extract_resource_group(subject)
+        container_name = subject.split('/')[-1]
+
+        logging.info(f'Resource Group: {resource_group}')
+        logging.info(f'Container Name: {container_name}')
+
+        # Fetch container details from Azure
+        images = fetch_container_images(event_subscription_id, resource_group, container_name, container_type)
 
         if not images:
-            logging.warning('No container images found in event data')
+            logging.warning('No container images found in container')
             return
 
         logging.info(f'Found {len(images)} container images to scan')
@@ -122,27 +133,40 @@ def main(event: func.EventGridEvent):
         raise
 
 
-def extract_images(event_data: dict, container_type: str) -> list:
+def fetch_container_images(subscription_id: str, resource_group: str, container_name: str, container_type: str) -> list:
+    """Fetch container images from Azure management API"""
     images = []
 
     try:
+        from azure.identity import DefaultAzureCredential
+        from azure.mgmt.containerinstance import ContainerInstanceManagementClient
+
+        logging.info(f'Fetching container details from Azure for {container_name}')
+
+        credential = DefaultAzureCredential()
+
         if container_type == 'ACI':
-            containers = event_data.get('data', {}).get('properties', {}).get('containers', [])
-            for container in containers:
-                image = container.get('properties', {}).get('image')
-                if image:
-                    images.append(image)
+            # Fetch ACI container group details
+            aci_client = ContainerInstanceManagementClient(credential, subscription_id)
+            container_group = aci_client.container_groups.get(resource_group, container_name)
+
+            logging.info(f'Retrieved container group: {container_group.name}')
+            logging.info(f'Number of containers: {len(container_group.containers)}')
+
+            for container in container_group.containers:
+                if container.image:
+                    logging.info(f'Found image: {container.image}')
+                    images.append(container.image)
 
         elif container_type == 'ACA':
-            template = event_data.get('data', {}).get('properties', {}).get('template', {})
-            containers = template.get('containers', [])
-            for container in containers:
-                image = container.get('image')
-                if image:
-                    images.append(image)
+            # Fetch ACA container app details
+            # Note: Would need ContainerAppsManagementClient for ACA
+            logging.warning('ACA support not yet implemented')
 
     except Exception as e:
-        logging.error(f'Error extracting images: {str(e)}')
+        logging.error(f'Error fetching container images from Azure: {str(e)}')
+        import traceback
+        logging.error(traceback.format_exc())
 
     return images
 
