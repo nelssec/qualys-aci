@@ -138,8 +138,8 @@ class QScannerACI:
             image=self.qscanner_image,
             resources=ResourceRequirements(
                 requests=ResourceRequests(
-                    memory_in_gb=2.0,
-                    cpu=1.0
+                    memory_in_gb=4.0,  # QScanner minimum requirement
+                    cpu=2.0             # QScanner minimum requirement
                 )
             ),
             command=command,
