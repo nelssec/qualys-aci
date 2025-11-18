@@ -75,12 +75,22 @@ fi
 echo ""
 
 # 3. Check Event Grid Configuration
-echo "=== 3. Checking Event Grid Subscriptions ==="
+echo "=== 3. Checking Event Grid System Topics ==="
+echo "Available Event Grid system topics:"
+az eventgrid system-topic list \
+  --resource-group $RG \
+  --query "[].{Name:name, TopicType:topicType, State:provisioningState}" \
+  --output table
+
+echo ""
+echo "Using Event Grid topic: $EVENT_GRID_TOPIC"
+echo ""
+echo "Event Grid subscriptions for $EVENT_GRID_TOPIC:"
 az eventgrid system-topic event-subscription list \
   --resource-group $RG \
   --system-topic-name "$EVENT_GRID_TOPIC" \
   --query "[].{Name:name, State:provisioningState, Endpoint:destination.endpointType}" \
-  --output table
+  --output table 2>&1 || echo "Failed to query subscriptions for $EVENT_GRID_TOPIC"
 
 echo ""
 
@@ -96,19 +106,19 @@ if [ -n "$APP_INSIGHTS" ]; then
   echo ""
 
   echo "Recent function invocations (last hour):"
-  az monitor app-insights query \
+  timeout 10s az monitor app-insights query \
     --app "$APP_INSIGHTS" \
     --resource-group $RG \
     --analytics-query "requests | where timestamp > ago(1h) | project timestamp, name, success, resultCode | order by timestamp desc | take 10" \
-    --output table 2>/dev/null || echo "No invocations or query failed"
+    --output table 2>/dev/null || echo "No invocations found or query timed out"
 
   echo ""
   echo "Recent errors (last hour):"
-  az monitor app-insights query \
+  timeout 10s az monitor app-insights query \
     --app "$APP_INSIGHTS" \
     --resource-group $RG \
     --analytics-query "traces | where timestamp > ago(1h) and severityLevel >= 3 | project timestamp, message | order by timestamp desc | take 10" \
-    --output table 2>/dev/null || echo "No errors found"
+    --output table 2>/dev/null || echo "No errors found or query timed out"
 else
   echo -e "${YELLOW}⚠ Application Insights not found${NC}"
 fi
