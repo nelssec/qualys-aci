@@ -3,11 +3,14 @@ import json
 import logging
 import azure.functions as func
 from datetime import datetime
-from ..qualys_scanner_aci import QScannerACI
-from ..image_parser import ImageParser
-from ..storage_handler import StorageHandler
+from qualys_scanner_aci import QScannerACI
+from image_parser import ImageParser
+from storage_handler import StorageHandler
 
-def main(event: func.EventGridEvent):
+app = func.FunctionApp()
+
+@app.event_grid_trigger(arg_name="event")
+def EventProcessor(event: func.EventGridEvent):
     logging.info(f'Python EventGrid trigger processed an event: {event.get_json()}')
 
     try:
@@ -21,6 +24,7 @@ def main(event: func.EventGridEvent):
         event_subscription_id = event_data.get('subscriptionId')
         if event_subscription_id:
             logging.info(f'Event from subscription: {event_subscription_id}')
+
         if 'Microsoft.ContainerInstance/containerGroups' in subject:
             container_type = 'ACI'
         elif 'Microsoft.App/containerApps' in subject:
