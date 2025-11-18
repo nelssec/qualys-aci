@@ -1,341 +1,278 @@
-# Qualys Container Scanner for Azure ACI/ACA
+# Qualys Container Scanner for Azure
 
-Event-driven container image scanning for Azure Container Instances and Azure Container Apps using Qualys qscanner.
-
-## Quick Start
-
-```bash
-export QUALYS_TOKEN="your-qualys-token"
-./deploy.sh
-```
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for details and [AUTOMATION.md](AUTOMATION.md) for how the automation works.
+Automated vulnerability scanning for Azure Container Instances (ACI) and Azure Container Apps (ACA) using Qualys qscanner.
 
 ## Overview
 
-This solution automatically scans container images when they're deployed to ACI or ACA. When a deployment event occurs, an Azure Function spins up a temporary container running qscanner, performs the scan, and stores the results. The scan container is deleted after completion.
+This solution automatically scans container images deployed to Azure using Event Grid triggers and Qualys qscanner. Scan results are uploaded to Qualys Cloud Platform and stored locally in Azure Storage.
 
-### Architecture
+## Architecture
 
 ```
-Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Scan → Store Results
+Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Scan → Qualys + Azure Storage
 ```
 
-Event Grid captures ACI/ACA deployment events and triggers an Azure Function. The function creates an Azure Container Instance running the official qualys/qscanner Docker image, which scans the deployed container image. Results are stored in Azure Storage and the scan container is deleted.
-
-### Components
-
-- Event Grid system topic monitoring resource group events
-- Azure Function with Event Grid trigger
-- On-demand ACI containers running qualys/qscanner
-- Azure Storage for scan results (Blob + Table)
-- Key Vault for Qualys credentials
-- Application Insights for monitoring
-- Azure Container Registry (qscanner image mirror)
+**Components:**
+- **Event Grid**: Monitors container deployments
+- **Azure Function**: Processes events and orchestrates scans
+- **Azure Container Instances**: Runs qscanner in temporary containers
+- **Azure Container Registry**: Hosts qscanner image
+- **Azure Storage**: Stores scan results and metadata
+- **Azure Key Vault**: Securely stores Qualys credentials
+- **Scan Caching**: 24-hour cache prevents duplicate scans
 
 ## Prerequisites
 
-- Azure CLI 2.50.0+
-- Azure Functions Core Tools 4.x
+- Azure CLI 2.50.0 or higher
 - Azure subscription with Contributor role
 - Qualys subscription with Container Security
-- Python 3.11 (for local development)
-- For tenant-wide: Management Group permissions
+- Qualys Access Token (from Qualys Cloud Platform)
+- Azure Functions Core Tools 4.x
 
-Register required resource providers:
+## Quick Start
+
+### 1. Set Environment Variables
 
 ```bash
-az provider register --namespace Microsoft.ContainerInstance
-az provider register --namespace Microsoft.App
-az provider register --namespace Microsoft.EventGrid
-az provider register --namespace Microsoft.Storage
-az provider register --namespace Microsoft.KeyVault
-az provider register --namespace Microsoft.Web
-az provider register --namespace Microsoft.ContainerRegistry
+export RESOURCE_GROUP="qualys-scanner-rg"
+export LOCATION="eastus"
+export QUALYS_POD="US2"  # Your Qualys POD (US1, US2, US3, EU1, etc.)
+export QUALYS_TOKEN="your-qualys-access-token"
 ```
 
-### Quota Requirements
-
-Default deployment uses Y1 (Consumption) plan which requires "Y1 VMs" quota:
+### 2. Deploy
 
 ```bash
-az vm list-usage --location eastus --query "[?name.value=='Y1'].{Current:currentValue,Limit:limit}"
-```
-
-If quota is 0, request increase via Azure Portal or use different SKU (EP1, P1v3) in `infrastructure/deploy.bicepparam`.
-
-## Deployment
-
-### Single Subscription
-
-Configure via environment variables (optional, defaults shown):
-
-```bash
-export RESOURCE_GROUP='qualys-scanner-rg'
-export LOCATION='eastus'
-export QUALYS_POD='US2'
-export FUNCTION_SKU='EP1'  # Y1, EP1, P1v3, etc.
-export NOTIFICATION_EMAIL='security@example.com'  # Optional
-export SCAN_CACHE_HOURS='24'  # Optional
-```
-
-Deploy:
-
-```bash
-export QUALYS_TOKEN='your-token'
 ./deploy.sh
 ```
 
-Minimal deployment (uses defaults):
+This single command:
+- Creates resource group
+- Deploys infrastructure (Function App, Storage, ACR, Key Vault, Event Grid)
+- Imports qscanner image to ACR
+- Deploys function code
+- Configures Event Grid subscriptions
+
+Deployment takes 5-10 minutes.
+
+### 3. Verify
 
 ```bash
-export QUALYS_TOKEN='your-token'
-./deploy.sh
+# Check function app status
+az functionapp show \
+  --resource-group $RESOURCE_GROUP \
+  --name $(az functionapp list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv) \
+  --query "{Name:name,State:state,Runtime:siteConfig.linuxFxVersion}"
+
+# Verify Event Grid subscriptions
+az eventgrid system-topic event-subscription list \
+  --resource-group $RESOURCE_GROUP \
+  --system-topic-name $(az eventgrid system-topic list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv) \
+  -o table
 ```
 
-This orchestrates: infrastructure deployment, function code deployment, Event Grid subscriptions.
-
-### Tenant-Wide Monitoring
-
-Monitor all subscriptions in your tenant:
-
-```bash
-# Step 1: Deploy to single subscription first
-export QUALYS_TOKEN='your-token'
-./deploy.sh
-
-# Step 2: Add tenant-wide Event Grid subscriptions
-az deployment mg create \
-  --management-group-id $(az account management-group list --query "[?displayName=='Tenant Root Group'].name" -o tsv) \
-  --location eastus \
-  --template-file infrastructure/tenant-wide.bicep \
-  --parameters infrastructure/tenant-wide.bicepparam
-```
-
-See [TENANT_WIDE.md](TENANT_WIDE.md) for details.
-
-### Manual Deployment
-
-For CI/CD pipelines or manual control:
-
-```bash
-# Deploy infrastructure
-az group create --name qualys-scanner-rg --location eastus
-az deployment group create \
-  --resource-group qualys-scanner-rg \
-  --template-file infrastructure/main.bicep \
-  --parameters @infrastructure/main.bicepparam \
-  --parameters qualysAccessToken='your-token'
-
-# Deploy function code
-cd function_app
-func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
-cd ..
-
-# Deploy Event Grid subscriptions
-az deployment group create \
-  --resource-group qualys-scanner-rg \
-  --template-file infrastructure/eventgrid.bicep \
-  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
-  --parameters eventGridTopicName=$(az eventgrid system-topic list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
-```
-
-## Configuration
-
-Environment variables configured in Function App:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `QUALYS_POD` | Qualys platform pod | `US2`, `US3`, `EU1` |
-| `QUALYS_ACCESS_TOKEN` | Qualys API token (from Key Vault) | `@Microsoft.KeyVault(...)` |
-| `AZURE_SUBSCRIPTION_ID` | Subscription for scan containers | Auto-set |
-| `QSCANNER_RESOURCE_GROUP` | Resource group for scan containers | `qualys-scanner-rg` |
-| `QSCANNER_IMAGE` | qscanner container image | `{acr}.azurecr.io/qualys/qscanner:latest` |
-| `SCAN_TIMEOUT` | Scan timeout (seconds) | `1800` |
-| `SCAN_CACHE_HOURS` | Cache duration | `24` |
-| `NOTIFY_SEVERITY_THRESHOLD` | Alert threshold | `HIGH`, `CRITICAL` |
-| `NOTIFICATION_EMAIL` | Alert email | Optional |
+Expected: 2 active subscriptions (aci-container-deployments, aca-container-deployments)
 
 ## How It Works
 
-### Scan Process
-
-1. User deploys container to ACI or ACA
-2. Azure Resource Manager emits deployment event
-3. Event Grid routes event to Function App
-4. Function extracts container image details
-5. Function creates ACI container with qscanner
+1. Container deployed to ACI or ACA
+2. Event Grid captures deployment event
+3. EventProcessor function triggered
+4. Function checks scan cache (24-hour window)
+5. If not cached, creates temporary ACI container with qscanner
 6. qscanner pulls and scans the image
-7. Results uploaded to Qualys and Azure Storage
-8. qscanner container deleted
-9. Function stores scan metadata
-10. Alerts sent if high-severity findings
+7. Results uploaded to Qualys Cloud Platform
+8. Results stored in Azure Storage
+9. qscanner container deleted
+10. Scan metadata cached
 
-### Scan Caching
-
-Images are cached by full name (registry/repository:tag) for `SCAN_CACHE_HOURS`. Cache metadata stored in Azure Table Storage.
-
-To force rescan:
-
-```bash
-az storage entity delete \
-  --account-name $(az storage account list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
-  --table-name ScanMetadata \
-  --partition-key "scan" \
-  --row-key "<image-name>"
-```
+**Scan Duration**: 2-5 minutes for typical images
 
 ## Viewing Results
 
 ### Qualys Dashboard
 
-1. Log in to Qualys portal
+1. Login to Qualys Cloud Platform (your POD URL)
 2. Navigate to Container Security
 3. Filter by tags: `azure_subscription`, `resource_group`, `container_type`
 
-Scans appear 2-5 minutes after upload.
+Results appear 2-5 minutes after scan completion.
 
 ### Azure Storage
 
 ```bash
-# Quick view with helper script
-./view-scan-results.sh
-
-# Manual query
 RG="qualys-scanner-rg"
 STORAGE=$(az storage account list --resource-group $RG --query "[0].name" -o tsv)
+STORAGE_KEY=$(az storage account keys list --resource-group $RG --account-name $STORAGE --query "[0].value" -o tsv)
 
+# List scan results
 az storage blob list \
   --account-name $STORAGE \
+  --account-key "$STORAGE_KEY" \
   --container-name scan-results \
-  --query "[].{Name:name, LastModified:properties.lastModified}" \
-  --output table
+  --query "[].{Name:name,LastModified:properties.lastModified}" \
+  -o table
+
+# Download specific result
+az storage blob download \
+  --account-name $STORAGE \
+  --account-key "$STORAGE_KEY" \
+  --container-name scan-results \
+  --name "path/to/result.json" \
+  --file result.json
 ```
 
 ### Application Insights
 
 ```bash
-# Quick view with helper script
-./view-logs.sh
-
-# Manual query
-RG="qualys-scanner-rg"
 APP_INSIGHTS_ID=$(az monitor app-insights component list --resource-group $RG --query "[0].appId" -o tsv)
 
+# View recent scans
 az monitor app-insights query \
   --app "$APP_INSIGHTS_ID" \
   --analytics-query "traces
     | where timestamp > ago(1h)
     | where operation_Name == 'EventProcessor'
-    | project timestamp, severityLevel, message
-    | order by timestamp desc" \
-  --output table
+    | project timestamp, message
+    | order by timestamp desc"
 ```
 
-## Testing
+## Configuration
 
-Verify deployment status:
+Environment variables in Function App:
 
-```bash
-./verify-deployment.sh
-```
-
-Test with a fresh image (will trigger actual scan):
-
-```bash
-./test-fresh-scan.sh
-```
-
-Test with cached image (will skip scan if recently scanned):
-
-```bash
-./test-automation.sh
-```
-
-Note: Images are cached for 24 hours by default. If you see "Image was recently scanned, skipping" in logs, this is expected behavior. Use `./test-fresh-scan.sh` to test with an image that hasn't been scanned yet.
-
-Manual qscanner test:
-
-```bash
-export QUALYS_TOKEN='your-token'
-./test-qscanner-manual.sh
-```
-
-## Troubleshooting
-
-Quick diagnostics:
-
-```bash
-./view-logs.sh          # View Application Insights logs
-./view-scan-results.sh  # View scan results from Azure Storage
-```
-
-For comprehensive troubleshooting, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-
-Common issues:
-
-**Scans not triggering**: Check Event Grid subscriptions are active
-**Scans failing**: Verify Qualys token is valid and not expired
-**Results not in Qualys**: Check POD setting and token permissions
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QUALYS_POD` | Qualys platform pod | From deployment |
+| `QUALYS_ACCESS_TOKEN` | From Key Vault | From deployment |
+| `QSCANNER_IMAGE` | qscanner container image | `{acr}.azurecr.io/qualys/qscanner:latest` |
+| `SCAN_CACHE_HOURS` | Cache duration | `24` |
+| `SCAN_TIMEOUT` | Scan timeout (seconds) | `1800` |
 
 ## Updating
 
-Update function code only:
+### Update Function Code
 
 ```bash
 ./update.sh
 ```
 
-Update Qualys token (requires Key Vault Secrets Officer role):
+### Update Qualys Token
 
 ```bash
 export QUALYS_TOKEN='your-new-token'
 ./update-token.sh
 ```
 
-If you don't have Key Vault permissions, update via:
-- Azure Portal: Key Vault > Secrets > QualysAccessToken > New Version
-- Redeploy: `export QUALYS_TOKEN='...' && ./deploy.sh`
+**If you don't have Key Vault permissions:**
+- Azure Portal: Key Vault → Secrets → QualysAccessToken → New Version
+- Or redeploy: `export QUALYS_TOKEN='...' && ./deploy.sh`
 
-## Cost Optimization
+## Scan Caching
 
-- Serverless Function App: Only runs on container deployments
-- On-demand ACI: Created per scan, deleted after completion
-- Scan caching: Avoids duplicate scans
-- Basic SKU ACR: Minimal cost for qscanner image mirror
+Images are cached by full name (registry/repository:tag) for 24 hours to prevent duplicate scans and reduce costs.
 
-Typical monthly costs:
-- Function App (Consumption): $1-5
-- Storage: $1-2
-- ACI (per scan): $0.01-0.05
-- Event Grid: Free (first 100k operations)
-- ACR (Basic): $5
+**To force rescan:**
+- Wait 24 hours for cache to expire
+- Deploy with different tag: `image:v2` instead of `image:v1`
+- Deploy with specific digest: `image@sha256:...`
+- Update `SCAN_CACHE_HOURS` environment variable in Function App
+
+## Troubleshooting
+
+### Scans Not Triggering
+
+Check Event Grid subscriptions:
+
+```bash
+az eventgrid system-topic event-subscription list \
+  --resource-group qualys-scanner-rg \
+  --system-topic-name $(az eventgrid system-topic list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+```
+
+Expected: 2 subscriptions with `ProvisioningState: Succeeded`
+
+### Results Not in Qualys
+
+Verify token and POD:
+
+```bash
+# Check POD setting
+az functionapp config appsettings list \
+  --resource-group qualys-scanner-rg \
+  --name $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
+  --query "[?name=='QUALYS_POD'].value" -o tsv
+```
+
+Update token:
+
+```bash
+export QUALYS_TOKEN='your-valid-token'
+./update-token.sh
+```
+
+### QScanner Image Missing
+
+Import qscanner image:
+
+```bash
+ACR_NAME=$(az acr list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+az acr import \
+  --name $ACR_NAME \
+  --source docker.io/qualys/qscanner:latest \
+  --image qualys/qscanner:latest
+```
+
+## Tenant-Wide Deployment
+
+For monitoring all subscriptions in your tenant, see [TENANT_WIDE.md](TENANT_WIDE.md).
 
 ## Security
 
-- Qualys token in Key Vault (secure storage)
-- Function App uses managed identity
-- RBAC: Minimal required permissions
-- Secure environment variables for containers
-- No public access to storage or Key Vault
+- **Credentials**: Qualys token in Azure Key Vault with RBAC
+- **Authentication**: Function App managed identity (no stored credentials)
+- **RBAC Roles**:
+  - Contributor (resource group scope) - create/delete ACI containers
+  - Key Vault Secrets User - read Qualys token
+  - AcrPull - pull qscanner image
+- **Network**: Azure Services only
+- **Encryption**: Soft delete enabled on Key Vault
 
-## Files
+## Cost
 
-- `deploy.sh` - Main deployment script
-- `infrastructure/deploy.bicep` - Orchestration Bicep template
-- `infrastructure/main.bicep` - Core infrastructure
-- `infrastructure/eventgrid.bicep` - Event Grid subscriptions
-- `function_app/` - Azure Function code
-- `test-automation.sh` - Debug: Test automation
-- `test-qscanner-manual.sh` - Debug: Manual qscanner test
-- `setup-automation.sh` - Debug: Update token and verify config
+Typical monthly cost for moderate usage:
 
-## Documentation
+- **Function App (Consumption)**: $1-5
+- **Storage (Blob + Table)**: $1-2
+- **ACI (per scan)**: $0.01-0.05
+- **ACR (Basic)**: $5
+- **Event Grid**: Free (first 100k operations)
 
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Detailed deployment guide
-- [AUTOMATION.md](AUTOMATION.md) - How automation works
-- [TENANT_WIDE.md](TENANT_WIDE.md) - Tenant-wide deployment
+**Total**: ~$8-15/month
+
+## Architecture Details
+
+**Function App**:
+- Runtime: Python 3.11
+- Extension Bundle: v4
+- Trigger: Event Grid
+- Timeout: 30 minutes
+- Retry: 3 attempts with 5s delay
+
+**Storage**:
+- Blob: `scan-results` (full scan JSON)
+- Table: `ScanMetadata` (cache and metadata)
+
+**Event Grid**:
+- System Topic: Resource Group events
+- Filters: ACI and ACA deployments
+- Schema: Event Grid Schema
+
+**Container Registry**:
+- SKU: Basic
+- Auth: Managed identity
+- Image: `qualys/qscanner:latest`
 
 ## License
 
-MIT
+See [LICENSE](LICENSE)
