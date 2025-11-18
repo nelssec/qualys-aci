@@ -4,7 +4,7 @@ param managementGroupId string
 param functionResourceGroup string
 param functionSubscriptionId string
 param functionAppName string
-param namePrefix string = 'qualys-scanner'
+param namePrefix string = 'qscan'
 
 resource aciEventSubscription 'Microsoft.EventGrid/eventSubscriptions@2023-12-15-preview' = {
   name: '${namePrefix}-aci-tenant-wide'

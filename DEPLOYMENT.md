@@ -54,7 +54,6 @@ Edit `infrastructure/main.bicepparam`:
 using './main.bicep'
 
 param location = 'eastus'
-param namePrefix = 'qualys-scanner'
 param qualysPod = 'US2'
 param notificationEmail = 'security@example.com'
 param notifySeverityThreshold = 'HIGH'
@@ -161,8 +160,7 @@ using './tenant-wide.bicep'
 param managementGroupId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'  // Your tenant root MG
 param functionResourceGroup = 'qualys-scanner-rg'
 param functionSubscriptionId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'  // Central subscription
-param functionAppName = 'qualys-scanner-func-abc123'  // From step 2
-param namePrefix = 'qualys-scanner'
+param functionAppName = 'qscan-func-abc123'  // From step 2
 ```
 
 #### Step 5: Deploy Tenant-Wide Event Grid
@@ -195,7 +193,7 @@ For single subscription:
 ```bash
 az eventgrid system-topic event-subscription list \
   --resource-group qualys-scanner-rg \
-  --system-topic-name qualys-scanner-aci-topic
+  --system-topic-name qscan-aci-topic
 ```
 
 For tenant-wide:
@@ -426,7 +424,7 @@ Check subscription status after deployment:
 ```bash
 az eventgrid system-topic event-subscription show \
   --resource-group qualys-scanner-rg \
-  --system-topic-name qualys-scanner-aci-topic \
+  --system-topic-name qscan-aci-topic \
   --name aci-container-deployments \
   --query provisioningState
 ```

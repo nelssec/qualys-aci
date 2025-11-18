@@ -206,7 +206,7 @@ Check Event Grid subscription:
 az eventgrid system-topic event-subscription show \
   --name aci-container-deployments \
   --resource-group qualys-scanner-rg \
-  --system-topic-name qualys-scanner-aci-topic
+  --system-topic-name qscan-aci-topic
 ```
 
 Verify events are being delivered:
@@ -223,7 +223,7 @@ Check Function App logs:
 
 ```bash
 az monitor app-insights query \
-  --app qualys-scanner-func-xxx \
+  --app qscan-func-xxx \
   --analytics-query "exceptions | where timestamp > ago(1h)"
 ```
 
@@ -238,7 +238,7 @@ For Azure Container Registry, grant the Function App's managed identity AcrPull 
 
 ```bash
 PRINCIPAL_ID=$(az functionapp identity show \
-  --name qualys-scanner-func-xxx \
+  --name qscan-func-xxx \
   --resource-group qualys-scanner-rg \
   --query principalId -o tsv)
 
