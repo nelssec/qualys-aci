@@ -60,7 +60,7 @@ param notifySeverityThreshold = 'HIGH'
 param functionAppSku = 'Y1'
 ```
 
-#### Step 2: Deploy
+#### Step 2: Deploy Infrastructure
 
 ```bash
 cd infrastructure
@@ -83,17 +83,22 @@ Access token is passed via command line for security (not stored in parameter fi
 ```bash
 cd ../function_app
 
-# Get function app name from deployment
-FUNCTION_APP=$(az deployment group show \
-  --resource-group qualys-scanner-rg \
-  --name main \
-  --query properties.outputs.functionAppName.value -o tsv)
-
-# Deploy function code
-func azure functionapp publish $FUNCTION_APP --build remote
+func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
 ```
 
-Event Grid subscriptions include automatic retry logic and activate once function code is deployed.
+#### Step 4: Deploy Event Grid Subscriptions
+
+```bash
+cd ../infrastructure
+
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file eventgrid.bicep \
+  --parameters eventgrid.bicepparam \
+  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+```
+
+Event Grid subscriptions are deployed separately to ensure endpoint validation succeeds.
 
 ### Option 2: Tenant-Wide Monitoring
 
@@ -124,16 +129,23 @@ az deployment group create \
 ```bash
 cd ../function_app
 
-FUNCTION_APP=$(az deployment group show \
-  --resource-group qualys-scanner-rg \
-  --subscription central-subscription-id \
-  --name main \
-  --query properties.outputs.functionAppName.value -o tsv)
-
-func azure functionapp publish $FUNCTION_APP --build remote
+func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --subscription central-subscription-id --query "[0].name" -o tsv) --python --build remote
 ```
 
-#### Step 3: Get Management Group ID
+#### Step 3: Deploy Event Grid Subscriptions (Subscription-Scoped)
+
+```bash
+cd ../infrastructure
+
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --subscription central-subscription-id \
+  --template-file eventgrid.bicep \
+  --parameters eventgrid.bicepparam \
+  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --subscription central-subscription-id --query "[0].name" -o tsv)
+```
+
+#### Step 4: Get Management Group ID
 
 For entire tenant:
 
@@ -150,7 +162,7 @@ For specific business unit, list management groups:
 az account management-group list --output table
 ```
 
-#### Step 4: Configure Tenant-Wide Parameters
+#### Step 5: Configure Tenant-Wide Parameters
 
 Edit `infrastructure/tenant-wide.bicepparam`:
 
@@ -163,7 +175,7 @@ param functionSubscriptionId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'  // Centra
 param functionAppName = 'qscan-func-abc123'  // From step 2
 ```
 
-#### Step 5: Deploy Tenant-Wide Event Grid
+#### Step 6: Deploy Tenant-Wide Event Grid
 
 ```bash
 az deployment mg create \

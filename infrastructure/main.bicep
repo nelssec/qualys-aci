@@ -276,10 +276,8 @@ resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2
   }
 }
 
-// Event Grid subscriptions have built-in retry logic for endpoint validation
-// When function code is deployed after infrastructure, Event Grid automatically
-// retries validation and the subscription becomes active (no manual intervention needed)
-
+// Event Grid system topic for resource group events
+// Event subscriptions are deployed separately after function code deployment
 resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
   name: '${namePrefix}-aci-topic'
   location: 'global'
@@ -289,91 +287,10 @@ resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview'
   }
 }
 
-resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = {
-  parent: aciEventGridTopic
-  name: 'aci-container-deployments'
-  properties: {
-    destination: {
-      endpointType: 'AzureFunction'
-      properties: {
-        resourceId: '${functionApp.id}/functions/EventProcessor'
-        maxEventsPerBatch: 1
-        preferredBatchSizeInKilobytes: 64
-      }
-    }
-    filter: {
-      includedEventTypes: [
-        'Microsoft.Resources.ResourceWriteSuccess'
-      ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.ContainerInstance'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.ContainerInstance/containerGroups/write'
-          ]
-        }
-      ]
-    }
-    eventDeliverySchema: 'EventGridSchema'
-    retryPolicy: {
-      maxDeliveryAttempts: 30
-      eventTimeToLiveInMinutes: 1440
-    }
-  }
-}
-
-resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = {
-  parent: aciEventGridTopic
-  name: 'aca-container-deployments'
-  properties: {
-    destination: {
-      endpointType: 'AzureFunction'
-      properties: {
-        resourceId: '${functionApp.id}/functions/EventProcessor'
-        maxEventsPerBatch: 1
-        preferredBatchSizeInKilobytes: 64
-      }
-    }
-    filter: {
-      includedEventTypes: [
-        'Microsoft.Resources.ResourceWriteSuccess'
-      ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.App'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.App/containerApps/write'
-          ]
-        }
-      ]
-    }
-    eventDeliverySchema: 'EventGridSchema'
-    retryPolicy: {
-      maxDeliveryAttempts: 30
-      eventTimeToLiveInMinutes: 1440
-    }
-  }
-}
-
 output functionAppName string = functionApp.name
 output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
 output storageAccountName string = storageAccount.name
 output keyVaultName string = keyVault.name
 output appInsightsName string = appInsights.name
 output functionAppPrincipalId string = functionApp.identity.principalId
+output eventGridTopicName string = aciEventGridTopic.name
