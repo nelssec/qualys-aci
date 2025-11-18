@@ -41,19 +41,21 @@ fi
 
 echo ""
 echo "=== 2. Creating test qscanner container ==="
-TEST_IMAGE="mcr.microsoft.com/azuredocs/aci-helloworld:latest"
-CONTAINER_NAME="qscanner-manual-test-$(date +%s)"
-
-echo "Container name: $CONTAINER_NAME"
-echo "Scanning image: $TEST_IMAGE"
-echo ""
-
 # Enable ACR admin for pulling
 echo "Enabling ACR admin credentials..."
 az acr update --name $ACR_NAME --admin-enabled true --output none
 
 ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query "username" -o tsv)
 ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" -o tsv)
+
+echo ""
+echo "=== 3. Running qscanner scan ==="
+TEST_IMAGE="mcr.microsoft.com/azuredocs/aci-helloworld:latest"
+CONTAINER_NAME="qscanner-manual-test-$(date +%s)"
+
+echo "Container name: $CONTAINER_NAME"
+echo "Scanning image: $TEST_IMAGE"
+echo ""
 
 # Create qscanner container with the same settings as the function would use
 az container create \
@@ -69,7 +71,7 @@ az container create \
   --os-type Linux \
   --environment-variables \
     QUALYS_ACCESS_TOKEN="$QUALYS_TOKEN" \
-  --command-line "/bin/sh -c \"/qscanner image ${TEST_IMAGE} --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls\"" \
+  --command-line "image ${TEST_IMAGE} --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls" \
   --output none
 
 echo "✓ Container created"
@@ -78,7 +80,7 @@ echo "Waiting 30 seconds for container to start..."
 sleep 30
 
 echo ""
-echo "=== 3. Checking container status ==="
+echo "=== 4. Checking container status ==="
 az container show \
   --resource-group $RG \
   --name $CONTAINER_NAME \
@@ -86,7 +88,7 @@ az container show \
   --output table
 
 echo ""
-echo "=== 4. Container events ==="
+echo "=== 5. Container events ==="
 az container show \
   --resource-group $RG \
   --name $CONTAINER_NAME \
@@ -94,13 +96,13 @@ az container show \
   --output table
 
 echo ""
-echo "=== 5. Container logs ==="
+echo "=== 6. Container logs ==="
 az container logs \
   --resource-group $RG \
   --name $CONTAINER_NAME 2>&1 || echo "No logs available"
 
 echo ""
-echo "=== 6. Diagnosis ==="
+echo "=== 7. Diagnosis ==="
 STATE=$(az container show --resource-group $RG --name $CONTAINER_NAME --query "instanceView.state" -o tsv)
 EXIT_CODE=$(az container show --resource-group $RG --name $CONTAINER_NAME --query "containers[0].instanceView.currentState.exitCode" -o tsv)
 
