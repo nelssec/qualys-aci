@@ -5,7 +5,8 @@ set -e
 
 RG="qualys-scanner-rg"
 FUNCTION_APP=$(az functionapp list --resource-group $RG --query "[0].name" -o tsv)
-EVENT_GRID_TOPIC=$(az eventgrid system-topic list --resource-group $RG --query "[0].name" -o tsv)
+# Get the ResourceGroups topic, not storage account topic
+EVENT_GRID_TOPIC=$(az eventgrid system-topic list --resource-group $RG --query "[?topicType=='Microsoft.Resources.ResourceGroups'].name | [0]" -o tsv)
 
 # Colors for output
 RED='\033[0;31m'
