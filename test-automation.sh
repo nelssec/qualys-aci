@@ -18,6 +18,7 @@ az container create \
   --image nginx:latest \
   --cpu 1 \
   --memory 1 \
+  --os-type Linux \
   --restart-policy Always \
   --ports 80 \
   --output none
