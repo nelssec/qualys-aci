@@ -84,20 +84,15 @@ Expected: 2 active subscriptions (aci-container-deployments, aca-container-deplo
 Deploy a test container to trigger automatic scanning:
 
 ```bash
-# Deploy a test container (uses Microsoft Container Registry to avoid rate limits)
 az container create \
   --resource-group qualys-scanner-rg \
   --name test-scan \
   --image mcr.microsoft.com/dotnet/runtime:8.0 \
-  --cpu 1 \
-  --memory 1 \
+  --os-type Linux \
   --restart-policy Never
 ```
 
-The scan will trigger automatically within seconds. Check results in:
-- Qualys Dashboard: Container Security section
-- Application Insights: EventProcessor logs
-- Azure Storage: scan-results blob container
+Check results in Qualys Dashboard (Container Security) or Application Insights (EventProcessor logs).
 
 ## How It Works
 
@@ -219,13 +214,14 @@ az eventgrid system-topic event-subscription list \
 
 Expected: 2 subscriptions with `ProvisioningState: Succeeded`
 
-Test manually by deploying a container:
+Test by deploying a container:
 
 ```bash
 az container create \
   --resource-group qualys-scanner-rg \
   --name test-$(date +%s) \
   --image mcr.microsoft.com/dotnet/runtime:8.0 \
+  --os-type Linux \
   --restart-policy Never
 ```
 

@@ -26,14 +26,12 @@ fi
 echo "Key Vault: $KV_NAME"
 echo ""
 
-# Check if user has permission
 USER_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || echo "")
 if [ -z "$USER_ID" ]; then
   echo "ERROR: Cannot determine current user identity"
   exit 1
 fi
 
-# Try to update the token
 echo "Updating token..."
 if az keyvault secret set \
   --vault-name "$KV_NAME" \
