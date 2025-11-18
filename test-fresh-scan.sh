@@ -1,12 +1,12 @@
 #!/bin/bash
 # Test automated scanning with a fresh image that hasn't been scanned
-# Uses nginx image which likely hasn't been scanned yet
+# Uses dotnet sample image which likely hasn't been scanned yet
 
 set -e
 
 RG="qualys-scanner-rg"
-TEST_CONTAINER_NAME="test-nginx-$(date +%s)"
-TEST_IMAGE="mcr.microsoft.com/oss/nginx/nginx:1.25.3"
+TEST_CONTAINER_NAME="test-dotnet-$(date +%s)"
+TEST_IMAGE="mcr.microsoft.com/dotnet/samples:aspnetapp"
 
 echo "Testing Automated Container Scanning with Fresh Image"
 echo "Container: $TEST_CONTAINER_NAME"
