@@ -380,6 +380,7 @@ class QScannerACI:
             '--pod', self.qualys_pod,
             '--scan-types', 'os,sca,secret',  # Scan types: OS packages, SCA, secrets
             '--format', 'json',   # JSON output for parsing
+            '--save',             # Save results to Qualys platform
             '--skip-verify-tls'   # Skip TLS verification for registries
         ]
 
