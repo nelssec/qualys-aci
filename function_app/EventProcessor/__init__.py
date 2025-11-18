@@ -187,11 +187,15 @@ def should_alert(scan_result: dict) -> bool:
 
 
 def extract_resource_group(subject: str) -> str:
+    """Extract resource group name from Azure resource URI (case-insensitive)"""
     try:
         parts = subject.split('/')
-        rg_index = parts.index('resourceGroups') + 1
+        # Handle both 'resourceGroups' and 'resourcegroups' (case-insensitive)
+        parts_lower = [p.lower() for p in parts]
+        rg_index = parts_lower.index('resourcegroups') + 1
         return parts[rg_index]
-    except:
+    except Exception as e:
+        logging.error(f'Failed to extract resource group from subject: {subject}, error: {e}')
         return 'unknown'
 
 
