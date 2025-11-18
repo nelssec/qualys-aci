@@ -21,13 +21,20 @@ param scanCacheHours int = 24
   'EP1'
   'EP2'
   'EP3'
+  'P1v3'
+  'P2v3'
+  'P3v3'
+  'P0v4'
+  'P1v4'
+  'P2v4'
+  'P3v4'
 ])
 param functionAppSku string = 'Y1'
 var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
 var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
-var keyVaultName = '${namePrefix}-kv-${uniqueString(resourceGroup().id)}'
+var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -121,7 +128,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   location: location
   sku: {
     name: functionAppSku
-    tier: functionAppSku == 'Y1' ? 'Dynamic' : 'ElasticPremium'
+    tier: functionAppSku == 'Y1' ? 'Dynamic' : (startsWith(functionAppSku, 'EP') ? 'ElasticPremium' : 'PremiumV3')
   }
   kind: 'functionapp'
   properties: {
@@ -245,7 +252,7 @@ resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2
 
 resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
   name: '${namePrefix}-aci-topic'
-  location: location
+  location: 'global'
   properties: {
     source: resourceGroup().id
     topicType: 'Microsoft.Resources.ResourceGroups'
