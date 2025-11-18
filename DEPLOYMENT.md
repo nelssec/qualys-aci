@@ -5,6 +5,7 @@
 - Azure CLI 2.50.0 or higher
 - Azure subscription with Contributor role
 - Qualys subscription with Container Security
+- Azure Functions Core Tools 4.x
 - For tenant-wide: Management Group permissions
 
 Register required resource providers:
@@ -18,11 +19,32 @@ az provider register --namespace Microsoft.KeyVault
 az provider register --namespace Microsoft.Web
 ```
 
+## Pre-Deployment Validation
+
+Before deploying, verify you have the required permissions and quota.
+
+Check Y1 VM quota (required for Consumption plan):
+
+```bash
+az vm list-usage --location eastus --query "[?name.value=='Y1'].{Current:currentValue,Limit:limit}"
+```
+
+If quota is 0, either request increase via Azure Portal or use a different SKU (EP1, P1v3).
+
+Verify you have Contributor role on the subscription:
+
+```bash
+az role assignment list \
+  --assignee $(az account show --query user.name -o tsv) \
+  --scope /subscriptions/$(az account show --query id -o tsv) \
+  --query "[?roleDefinitionName=='Contributor' || roleDefinitionName=='Owner']"
+```
+
 ## Deployment Options
 
 ### Option 1: Single Subscription Monitoring
 
-Deploy scanner to monitor a single subscription.
+Deploy scanner to monitor a single subscription via pure Bicep deployment.
 
 #### Step 1: Configure Parameters
 
@@ -69,8 +91,10 @@ FUNCTION_APP=$(az deployment group show \
   --query properties.outputs.functionAppName.value -o tsv)
 
 # Deploy function code
-func azure functionapp publish $FUNCTION_APP
+func azure functionapp publish $FUNCTION_APP --build remote
 ```
+
+Event Grid subscriptions include automatic retry logic and activate once function code is deployed.
 
 ### Option 2: Tenant-Wide Monitoring
 
@@ -107,7 +131,7 @@ FUNCTION_APP=$(az deployment group show \
   --name main \
   --query properties.outputs.functionAppName.value -o tsv)
 
-func azure functionapp publish $FUNCTION_APP
+func azure functionapp publish $FUNCTION_APP --build remote
 ```
 
 #### Step 3: Get Management Group ID
@@ -320,6 +344,125 @@ traces
 ```
 
 ## Troubleshooting
+
+### Common Deployment Issues
+
+#### 1. Authorization Failed
+
+**Error:**
+```
+AuthorizationFailed: The client does not have authorization to perform action 'Microsoft.Resources/subscriptions/resourcegroups/write'
+```
+
+**Solution:**
+Ensure you have Contributor or Owner role on the subscription:
+
+```bash
+az role assignment list \
+  --assignee $(az account show --query user.name -o tsv) \
+  --scope /subscriptions/$(az account show --query id -o tsv) \
+  --query "[?roleDefinitionName=='Contributor' || roleDefinitionName=='Owner']"
+```
+
+Request role assignment from subscription administrator if needed.
+
+#### 2. Y1 VM Quota Exceeded
+
+**Error:**
+```
+SubscriptionIsOverQuotaForSku: Current Limit (Dynamic VMs): 0
+```
+
+**Solution:**
+The Y1 (Consumption) plan requires Y1 VM quota. Check current quota:
+
+```bash
+az vm list-usage --location eastus --query "[?name.value=='Y1'].{Current:currentValue,Limit:limit}"
+```
+
+If quota is 0, either:
+1. Request quota increase via Azure Portal (Subscriptions > Usage + quotas > Search "Y1 VMs")
+2. Use a different SKU by editing `infrastructure/main.bicepparam`:
+   ```bicep
+   param functionAppSku = 'EP1'  // or P1v3
+   ```
+
+#### 3. PremiumV4 SKU Not Allowed
+
+**Error:**
+```
+Conflict: The pricing tier 'PremiumV4' is not allowed in this resource group
+```
+
+**Solution:**
+Some regions or resource groups restrict certain SKUs. Use EP1 or P1v3 instead:
+
+```bicep
+param functionAppSku = 'EP1'  // ElasticPremium
+# or
+param functionAppSku = 'P1v3'  // Premium v3
+```
+
+#### 4. Event Grid Endpoint Validation Failed
+
+**Error:**
+```
+Endpoint validation: Destination endpoint not found
+```
+
+**Solution:**
+This can occur when Event Grid validates the endpoint before function code is deployed. Event Grid subscriptions include automatic retry logic with up to 30 attempts over 24 hours.
+
+**Fix:** Deploy the function code and Event Grid will automatically retry validation and activate the subscription. No manual redeployment needed.
+
+```bash
+cd function_app
+FUNCTION_APP=$(az deployment group show --resource-group qualys-scanner-rg --name main --query properties.outputs.functionAppName.value -o tsv)
+func azure functionapp publish $FUNCTION_APP --build remote
+```
+
+Check subscription status after deployment:
+
+```bash
+az eventgrid system-topic event-subscription show \
+  --resource-group qualys-scanner-rg \
+  --system-topic-name qualys-scanner-aci-topic \
+  --name aci-container-deployments \
+  --query provisioningState
+```
+
+#### 5. Resource Naming Conflicts
+
+**Error:**
+```
+The vault name 'qualys-scanner-kv-xyz' is invalid: must be 3-24 characters, alphanumeric and hyphens, no consecutive hyphens
+```
+
+**Solution:**
+Resource names have strict requirements:
+- Storage accounts: 3-24 chars, alphanumeric only
+- Key Vault: 3-24 chars, alphanumeric and hyphens, no consecutive hyphens
+- Function App: Must be globally unique
+
+The deployment uses `uniqueString(resourceGroup().id)` to avoid conflicts. If you see this error, the Bicep template should be updated (report as issue).
+
+#### 6. Function Deployment Failed
+
+**Error:**
+```
+Operation returned an invalid status 'Bad Request'
+```
+
+**Solution:**
+Use Azure Functions Core Tools instead of zip deployment:
+
+```bash
+cd function_app
+FUNCTION_APP=<your-function-app-name>
+func azure functionapp publish $FUNCTION_APP --build remote
+```
+
+The `--build remote` flag ensures dependencies are installed correctly on Azure.
 
 ### Deployment Fails with Permission Error
 

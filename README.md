@@ -33,21 +33,44 @@ Event Grid captures ACI/ACA deployment events and triggers an Azure Function. Th
 - Python 3.11 (for local development)
 - For tenant-wide: Management Group permissions
 
+### Quota Requirements
+
+The default deployment uses Y1 (Consumption) plan for Azure Functions, which requires quota for "Y1 VMs" in your subscription.
+
+Check quota:
+```bash
+az vm list-usage --location eastus --query "[?name.value=='Y1'].{Current:currentValue,Limit:limit}"
+```
+
+If Y1 quota is 0, request increase:
+1. Azure Portal > Subscriptions > Usage + quotas
+2. Search for "Y1 VMs" in your region
+3. Request increase from 0 to 1
+
+Alternative: Use EP1, P1v3, or other SKU by changing `functionAppSku` in `main.bicepparam` (costs more).
+
 ### Option 1: Single Subscription
 
 Monitor container deployments in one subscription.
 
-Configure `infrastructure/main.bicepparam` with your settings, then:
+Configure `infrastructure/main.bicepparam` with your settings:
+
+```bicep
+param qualysPod = 'US2'  // Your Qualys POD
+param location = 'eastus'
+param functionAppSku = 'Y1'  // Consumption plan
+```
+
+Deploy:
 
 ```bash
-cd infrastructure
-
 # Create resource group
 az group create \
   --name qualys-scanner-rg \
   --location eastus
 
 # Deploy infrastructure
+cd infrastructure
 az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file main.bicep \
@@ -60,38 +83,25 @@ FUNCTION_APP=$(az deployment group show \
   --resource-group qualys-scanner-rg \
   --name main \
   --query properties.outputs.functionAppName.value -o tsv)
-func azure functionapp publish $FUNCTION_APP
+func azure functionapp publish $FUNCTION_APP --build remote
 ```
+
+**Infrastructure & Code Separation:** Infrastructure deployment handles all Azure resources via Bicep. Function code is deployed separately using Azure Functions Core Tools. Event Grid subscriptions include automatic retry logic and activate once the function code is deployed.
 
 ### Option 2: Tenant-Wide Monitoring
 
 Monitor ALL subscriptions in your tenant.
 
 ```bash
-# Step 1: Deploy Function App (same as Option 1)
-cd infrastructure
-az group create --name qualys-scanner-rg --location eastus
-az deployment group create \
-  --resource-group qualys-scanner-rg \
-  --template-file main.bicep \
-  --parameters main.bicepparam \
-  --parameters qualysAccessToken='your-access-token'
+# Step 1: Deploy infrastructure and function code (same as Option 1)
+# Then add tenant-wide Event Grid subscriptions
 
-# Step 2: Deploy function code
-cd ../function_app
-FUNCTION_APP=$(az deployment group show \
-  --resource-group qualys-scanner-rg \
-  --name main \
-  --query properties.outputs.functionAppName.value -o tsv)
-func azure functionapp publish $FUNCTION_APP
-
-# Step 3: Get tenant root management group
+# Get tenant root management group
 TENANT_ROOT=$(az account management-group list \
   --query "[?displayName=='Tenant Root Group'].name" -o tsv)
 
-# Step 4: Configure and deploy tenant-wide Event Grid
-cd ../infrastructure
-# Edit tenant-wide.bicepparam with your function app details
+# Configure tenant-wide.bicepparam with your function app details
+# Then deploy Event Grid at management group scope
 az deployment mg create \
   --management-group-id $TENANT_ROOT \
   --location eastus \
