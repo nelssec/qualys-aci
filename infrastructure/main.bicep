@@ -11,7 +11,7 @@ param scanCacheHours int = 24
 param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
 param namePrefix string = 'qscan'
-param enableEventGrid bool = false
+param enableEventGrid bool = true
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
