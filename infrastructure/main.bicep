@@ -1,4 +1,8 @@
 param location string = resourceGroup().location
+
+@minLength(3)
+@maxLength(20)
+@description('Prefix for resource names. Keep under 20 chars to ensure generated names fit Azure constraints.')
 param namePrefix string = 'qualys-scanner'
 
 param qualysPod string
@@ -30,11 +34,24 @@ param scanCacheHours int = 24
   'P3v4'
 ])
 param functionAppSku string = 'Y1'
+
+// Resource naming with Azure constraints
+// Storage: 3-24 chars, alphanumeric only
+// Key Vault: 3-24 chars, alphanumeric and hyphens, no consecutive hyphens
+// uniqueString generates 13 chars, so 'qscan' (5) + 13 = 18 chars (within 24 limit)
 var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
 var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
 var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
+
+// Validate generated names meet Azure requirements
+var storageNameLength = length(storageAccountName)
+var keyVaultNameLength = length(keyVaultName)
+
+// These will cause deployment to fail with clear messages if constraints violated
+var _ = storageNameLength >= 3 && storageNameLength <= 24 ? true : error('Storage account name must be 3-24 characters')
+var __ = keyVaultNameLength >= 3 && keyVaultNameLength <= 24 ? true : error('Key Vault name must be 3-24 characters')
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location

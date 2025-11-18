@@ -49,7 +49,23 @@ If Y1 quota is 0, request increase:
 
 Alternative: Use EP1, P1v3, or other SKU by changing `functionAppSku` in `main.bicepparam` (costs more).
 
-### Option 1: Single Subscription
+### Quick Start: Automated Deployment
+
+The easiest way to deploy is using the automated deployment script:
+
+```bash
+cd infrastructure
+
+# Configure settings in main.bicepparam, then run:
+bash deploy.sh \
+  --resource-group qualys-scanner-rg \
+  --location eastus \
+  --qualys-token 'your-access-token'
+```
+
+The script automatically handles the complete deployment process including validation.
+
+### Option 1: Single Subscription (Manual)
 
 Monitor container deployments in one subscription.
 
@@ -57,6 +73,9 @@ Configure `infrastructure/main.bicepparam` with your settings, then:
 
 ```bash
 cd infrastructure
+
+# Optional: Validate prerequisites
+bash pre-deploy-check.sh eastus
 
 # Create resource group
 az group create \
@@ -76,37 +95,37 @@ FUNCTION_APP=$(az deployment group show \
   --resource-group qualys-scanner-rg \
   --name main \
   --query properties.outputs.functionAppName.value -o tsv)
-func azure functionapp publish $FUNCTION_APP
+func azure functionapp publish $FUNCTION_APP --build remote
+
+# Redeploy infrastructure to complete Event Grid setup
+cd ../infrastructure
+az deployment group create \
+  --resource-group qualys-scanner-rg \
+  --template-file main.bicep \
+  --parameters main.bicepparam \
+  --parameters qualysAccessToken='your-access-token' \
+  --mode Incremental
 ```
+
+**Note:** The three-step process (infrastructure → function code → infrastructure) is required for Event Grid subscription validation.
 
 ### Option 2: Tenant-Wide Monitoring
 
 Monitor ALL subscriptions in your tenant.
 
 ```bash
-# Step 1: Deploy Function App (same as Option 1)
+# Step 1: Deploy Function App using automated script
 cd infrastructure
-az group create --name qualys-scanner-rg --location eastus
-az deployment group create \
+bash deploy.sh \
   --resource-group qualys-scanner-rg \
-  --template-file main.bicep \
-  --parameters main.bicepparam \
-  --parameters qualysAccessToken='your-access-token'
+  --location eastus \
+  --qualys-token 'your-access-token'
 
-# Step 2: Deploy function code
-cd ../function_app
-FUNCTION_APP=$(az deployment group show \
-  --resource-group qualys-scanner-rg \
-  --name main \
-  --query properties.outputs.functionAppName.value -o tsv)
-func azure functionapp publish $FUNCTION_APP
-
-# Step 3: Get tenant root management group
+# Step 2: Get tenant root management group
 TENANT_ROOT=$(az account management-group list \
   --query "[?displayName=='Tenant Root Group'].name" -o tsv)
 
-# Step 4: Configure and deploy tenant-wide Event Grid
-cd ../infrastructure
+# Step 3: Configure and deploy tenant-wide Event Grid
 # Edit tenant-wide.bicepparam with your function app details
 az deployment mg create \
   --management-group-id $TENANT_ROOT \
