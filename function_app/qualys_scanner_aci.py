@@ -299,28 +299,31 @@ class QScannerACI:
         """
         Build qscanner command for container
 
+        Based on: docker run --env QUALYS_ACCESS_TOKEN=$TOKEN qualys/qscanner:latest
+                  image image:tag --pod <pod> --skip-verify-tls
+
         Args:
-            image_id: Full image identifier
+            image_id: Full image identifier to scan (e.g., mcr.microsoft.com/image:tag)
             custom_tags: Optional tags for tracking
 
         Returns:
-            Command as list
+            Command as list for ACI container
         """
         cmd_parts = [
-            'qscanner',
-            'image',
-            image_id,
+            'image',              # qscanner subcommand
+            image_id,             # Full image name with registry
             '--pod', self.qualys_pod,
-            '--output-format', 'json'
+            '--skip-verify-tls',  # Skip TLS verification for registries
+            '--mode', 'scan-only', # Upload results to Qualys platform
+            '--format', 'json'    # JSON output for parsing
         ]
 
-        # Add custom tags
+        # Add custom tags for tracking
         if custom_tags:
             for key, value in custom_tags.items():
                 cmd_parts.extend(['--tag', f'{key}={value}'])
 
-        cmd = ['/bin/sh', '-c', ' '.join(cmd_parts)]
-        return cmd
+        return cmd_parts
 
     def _parse_qscanner_output(self, output: str) -> Dict:
         """Parse qscanner JSON output"""
