@@ -268,21 +268,22 @@ Common issues:
 
 ## Updating
 
-Update Qualys token:
+Update function code only:
 
 ```bash
-az keyvault secret set \
-  --vault-name $(az keyvault list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
-  --name QualysAccessToken \
-  --value "your-new-token"
+./update.sh
 ```
 
-Update function code:
+Update Qualys token (requires Key Vault Secrets Officer role):
 
 ```bash
-cd function_app
-func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
+export QUALYS_TOKEN='your-new-token'
+./update-token.sh
 ```
+
+If you don't have Key Vault permissions, update via:
+- Azure Portal: Key Vault > Secrets > QualysAccessToken > New Version
+- Redeploy: `export QUALYS_TOKEN='...' && ./deploy.sh`
 
 ## Cost Optimization
 
