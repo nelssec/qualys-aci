@@ -83,14 +83,7 @@ Access token is passed via command line for security (not stored in parameter fi
 ```bash
 cd ../function_app
 
-# Get function app name from deployment
-FUNCTION_APP=$(az deployment group show \
-  --resource-group qualys-scanner-rg \
-  --name main \
-  --query properties.outputs.functionAppName.value -o tsv)
-
-# Deploy function code
-func azure functionapp publish $FUNCTION_APP --build remote
+func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
 ```
 
 #### Step 4: Deploy Event Grid Subscriptions
@@ -98,12 +91,11 @@ func azure functionapp publish $FUNCTION_APP --build remote
 ```bash
 cd ../infrastructure
 
-# Deploy Event Grid subscriptions (now that function endpoint exists)
 az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file eventgrid.bicep \
   --parameters eventgrid.bicepparam \
-  --parameters functionAppName=$FUNCTION_APP
+  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
 ```
 
 Event Grid subscriptions are deployed separately to ensure endpoint validation succeeds.
@@ -137,13 +129,7 @@ az deployment group create \
 ```bash
 cd ../function_app
 
-FUNCTION_APP=$(az deployment group show \
-  --resource-group qualys-scanner-rg \
-  --subscription central-subscription-id \
-  --name main \
-  --query properties.outputs.functionAppName.value -o tsv)
-
-func azure functionapp publish $FUNCTION_APP --build remote
+func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --subscription central-subscription-id --query "[0].name" -o tsv) --python --build remote
 ```
 
 #### Step 3: Deploy Event Grid Subscriptions (Subscription-Scoped)
@@ -151,13 +137,12 @@ func azure functionapp publish $FUNCTION_APP --build remote
 ```bash
 cd ../infrastructure
 
-# Deploy Event Grid subscriptions for the central subscription
 az deployment group create \
   --resource-group qualys-scanner-rg \
   --subscription central-subscription-id \
   --template-file eventgrid.bicep \
   --parameters eventgrid.bicepparam \
-  --parameters functionAppName=$FUNCTION_APP
+  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --subscription central-subscription-id --query "[0].name" -o tsv)
 ```
 
 #### Step 4: Get Management Group ID

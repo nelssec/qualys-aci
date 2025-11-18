@@ -79,11 +79,7 @@ az deployment group create \
 
 # Step 3: Deploy function code
 cd ../function_app
-FUNCTION_APP=$(az deployment group show \
-  --resource-group qualys-scanner-rg \
-  --name main \
-  --query properties.outputs.functionAppName.value -o tsv)
-func azure functionapp publish $FUNCTION_APP --build remote
+func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
 
 # Step 4: Deploy Event Grid subscriptions
 cd ../infrastructure
@@ -91,7 +87,7 @@ az deployment group create \
   --resource-group qualys-scanner-rg \
   --template-file eventgrid.bicep \
   --parameters eventgrid.bicepparam \
-  --parameters functionAppName=$FUNCTION_APP
+  --parameters functionAppName=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
 ```
 
 **Clean Three-Step Process:** Infrastructure → Function Code → Event Grid. Each step has a clear purpose and will not fail.
