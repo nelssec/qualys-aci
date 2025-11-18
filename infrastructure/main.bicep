@@ -279,16 +279,6 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
-resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, functionApp.id, 'Contributor')
-  scope: subscription()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
 resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(containerRegistry.id, functionApp.id, 'AcrPull')
   scope: containerRegistry
