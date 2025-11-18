@@ -21,6 +21,13 @@ param scanCacheHours int = 24
   'EP1'
   'EP2'
   'EP3'
+  'P1v3'
+  'P2v3'
+  'P3v3'
+  'P0v4'
+  'P1v4'
+  'P2v4'
+  'P3v4'
 ])
 param functionAppSku string = 'Y1'
 var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
@@ -121,7 +128,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   location: location
   sku: {
     name: functionAppSku
-    tier: functionAppSku == 'Y1' ? 'Dynamic' : 'ElasticPremium'
+    tier: functionAppSku == 'Y1' ? 'Dynamic' : (startsWith(functionAppSku, 'EP') ? 'ElasticPremium' : 'PremiumV3')
   }
   kind: 'functionapp'
   properties: {
