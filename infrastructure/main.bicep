@@ -1,311 +1,54 @@
-param location string = resourceGroup().location
+targetScope = 'subscription'
 
-@minLength(3)
-@maxLength(10)
-@description('Prefix for resource names.')
+param location string = 'eastus'
+param resourceGroupName string = 'qualys-scanner-rg'
+param qualysPod string
+@secure()
+param qualysAccessToken string
+param notificationEmail string = ''
+param notifySeverityThreshold string = 'HIGH'
+param scanCacheHours int = 24
+param functionAppSku string = 'Y1'
+param functionPackageUrl string = ''
 param namePrefix string = 'qscan'
 
-@description('Qualys POD identifier (e.g., US2, US3, EU1)')
-param qualysPod string
-
-@secure()
-@description('Qualys API access token for container scanning')
-param qualysAccessToken string
-
-@description('Optional email for vulnerability notifications')
-param notificationEmail string = ''
-
-@allowed([
-  'CRITICAL'
-  'HIGH'
-])
-@description('Minimum severity level for notifications')
-param notifySeverityThreshold string = 'HIGH'
-
-@minValue(1)
-@maxValue(168)
-@description('Hours to cache scan results before rescanning')
-param scanCacheHours int = 24
-
-@allowed([
-  'Y1'
-  'EP1'
-  'EP2'
-  'EP3'
-  'P1v3'
-  'P2v3'
-  'P3v3'
-  'P0v4'
-  'P1v4'
-  'P2v4'
-  'P3v4'
-])
-@description('Function App SKU. Y1=Consumption (requires Y1 VM quota), EP=ElasticPremium, P=Premium')
-param functionAppSku string = 'Y1'
-
-@description('URL to function app deployment package (zip file). Leave empty to skip automatic deployment.')
-param functionPackageUrl string = ''
-
-// Resource naming with Azure constraints
-// Storage: 3-24 chars, alphanumeric only (qscan=5 + uniqueString=13 = 18 chars)
-// Key Vault: 3-24 chars, alphanumeric and hyphens (qskv=4 + uniqueString=13 = 17 chars)
-// uniqueString always generates exactly 13 characters
-var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
-var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
-var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
-var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
-var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
-var acrName = 'qscanacr${uniqueString(resourceGroup().id)}'
-
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: storageAccountName
+resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
+  name: resourceGroupName
   location: location
-  sku: {
-    name: 'Standard_LRS'
+}
+
+module resources 'resources.bicep' = {
+  scope: rg
+  name: 'qualys-scanner-resources'
+  params: {
+    location: location
+    namePrefix: namePrefix
+    qualysPod: qualysPod
+    qualysAccessToken: qualysAccessToken
+    notificationEmail: notificationEmail
+    notifySeverityThreshold: notifySeverityThreshold
+    scanCacheHours: scanCacheHours
+    functionAppSku: functionAppSku
+    functionPackageUrl: functionPackageUrl
   }
-  kind: 'StorageV2'
+}
+
+resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resources.outputs.functionAppPrincipalId, 'Contributor')
   properties: {
-    minimumTlsVersion: 'TLS1_2'
-    supportsHttpsTrafficOnly: true
-    allowBlobPublicAccess: false
-    accessTier: 'Hot'
-    encryption: {
-      services: {
-        blob: {
-          enabled: true
-        }
-        file: {
-          enabled: true
-        }
-      }
-      keySource: 'Microsoft.Storage'
-    }
-  }
-}
-
-resource scanResultsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
-  name: '${storageAccountName}/default/scan-results'
-  dependsOn: [
-    storageAccount
-  ]
-  properties: {
-    publicAccess: 'None'
-  }
-}
-
-resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
-  parent: storageAccount
-  name: 'default'
-}
-
-resource scanMetadataTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
-  parent: tableService
-  name: 'ScanMetadata'
-}
-
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: appInsightsName
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    RetentionInDays: 90
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
-  }
-}
-
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: acrName
-  location: location
-  sku: {
-    name: 'Basic'
-  }
-  properties: {
-    adminUserEnabled: false
-    publicNetworkAccess: 'Enabled'
-  }
-}
-
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: keyVaultName
-  location: location
-  properties: {
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    tenantId: subscription().tenantId
-    enabledForDeployment: false
-    enabledForDiskEncryption: false
-    enabledForTemplateDeployment: true
-    enableRbacAuthorization: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 90
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'
-    }
-  }
-}
-
-resource qualysAccessTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'QualysAccessToken'
-  properties: {
-    value: qualysAccessToken
-  }
-}
-
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
-  name: appServicePlanName
-  location: location
-  sku: {
-    name: functionAppSku
-    tier: functionAppSku == 'Y1' ? 'Dynamic' : (startsWith(functionAppSku, 'EP') ? 'ElasticPremium' : 'PremiumV3')
-  }
-  kind: 'functionapp'
-  properties: {
-    reserved: true
-  }
-}
-
-resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
-  name: functionAppName
-  location: location
-  kind: 'functionapp,linux'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    serverFarmId: appServicePlan.id
-    httpsOnly: true
-    reserved: true
-    siteConfig: {
-      linuxFxVersion: 'Python|3.11'
-      appSettings: concat([
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        }
-        {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: toLower(functionAppName)
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'python'
-        }
-        {
-          name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
-          value: appInsights.properties.InstrumentationKey
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          name: 'QUALYS_POD'
-          value: qualysPod
-        }
-        {
-          name: 'QUALYS_ACCESS_TOKEN'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysAccessTokenSecret.properties.secretUri})'
-        }
-        {
-          name: 'AZURE_SUBSCRIPTION_ID'
-          value: subscription().subscriptionId
-        }
-        {
-          name: 'QSCANNER_RESOURCE_GROUP'
-          value: resourceGroup().name
-        }
-        {
-          name: 'AZURE_REGION'
-          value: location
-        }
-        {
-          name: 'QSCANNER_IMAGE'
-          value: '${acrName}.azurecr.io/qualys/qscanner:latest'
-        }
-        {
-          name: 'STORAGE_CONNECTION_STRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        }
-        {
-          name: 'NOTIFICATION_EMAIL'
-          value: notificationEmail
-        }
-        {
-          name: 'NOTIFY_SEVERITY_THRESHOLD'
-          value: notifySeverityThreshold
-        }
-        {
-          name: 'SCAN_CACHE_HOURS'
-          value: string(scanCacheHours)
-        }
-        {
-          name: 'SCAN_TIMEOUT'
-          value: '1800'
-        }
-      ], !empty(functionPackageUrl) ? [
-        {
-          name: 'WEBSITE_RUN_FROM_PACKAGE'
-          value: functionPackageUrl
-        }
-      ] : [])
-      ftpsState: 'Disabled'
-      minTlsVersion: '1.2'
-      pythonVersion: '3.11'
-    }
-  }
-}
-
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, functionApp.id, 'Key Vault Secrets User')
-  scope: keyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: functionApp.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: resources.outputs.functionAppPrincipalId
     principalType: 'ServicePrincipal'
   }
 }
 
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, functionApp.id, 'AcrPull')
-  scope: containerRegistry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Event Grid system topic for subscription-wide container monitoring
-// Event subscriptions are deployed separately after function code deployment
-resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
-  name: '${namePrefix}-aci-topic'
-  location: 'global'
-  properties: {
-    source: subscription().id
-    topicType: 'Microsoft.Resources.Subscriptions'
-  }
-}
-
-output functionAppName string = functionApp.name
-output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
-output storageAccountName string = storageAccount.name
-output keyVaultName string = keyVault.name
-output appInsightsName string = appInsights.name
-output functionAppPrincipalId string = functionApp.identity.principalId
-output eventGridTopicName string = aciEventGridTopic.name
-output containerRegistryName string = containerRegistry.name
-output containerRegistryLoginServer string = containerRegistry.properties.loginServer
+output functionAppName string = resources.outputs.functionAppName
+output functionAppUrl string = resources.outputs.functionAppUrl
+output storageAccountName string = resources.outputs.storageAccountName
+output keyVaultName string = resources.outputs.keyVaultName
+output appInsightsName string = resources.outputs.appInsightsName
+output functionAppPrincipalId string = resources.outputs.functionAppPrincipalId
+output eventGridTopicName string = resources.outputs.eventGridTopicName
+output containerRegistryName string = resources.outputs.containerRegistryName
+output containerRegistryLoginServer string = resources.outputs.containerRegistryLoginServer
+output resourceGroupName string = rg.name
