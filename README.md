@@ -37,30 +37,7 @@ Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Sc
 
 ## Quick Start
 
-### 1. Set Environment Variables
-
-```bash
-export RESOURCE_GROUP="qualys-scanner-rg"
-export LOCATION="eastus"
-export QUALYS_POD="US2"  # Your Qualys POD (US1, US2, US3, EU1, etc.)
-export QUALYS_ACCESS_TOKEN="your-qualys-access-token"
-```
-
-### 2. Deploy
-
-```bash
-./deploy.sh
-```
-
-This deploys everything at subscription scope:
-- Creates resource group
-- Deploys all infrastructure with subscription-level permissions
-- Deploys function code
-- Configures Event Grid subscriptions
-
-Deployment takes 5-10 minutes.
-
-**Alternative: Pure Bicep Deployment (no script needed)**
+### 1. Deploy Infrastructure
 
 ```bash
 az deployment sub create \
@@ -69,28 +46,36 @@ az deployment sub create \
   --parameters location=eastus \
   --parameters resourceGroupName=qualys-scanner-rg \
   --parameters qualysPod=US2 \
-  --parameters qualysAccessToken="your-token"
+  --parameters qualysAccessToken="your-qualys-token"
 ```
 
-Then deploy function code: `cd function_app && func azure functionapp publish <function-app-name>`
+This creates:
+- Resource group
+- Function App with subscription-level permissions
+- Storage Account, Key Vault, ACR
+- Event Grid system topic
 
-### 3. Verify
+### 2. Deploy Function Code
 
 ```bash
-# Check function app status
-az functionapp show \
-  --resource-group $RESOURCE_GROUP \
-  --name $(az functionapp list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv) \
-  --query "{Name:name,State:state,Runtime:siteConfig.linuxFxVersion}"
-
-# Verify Event Grid subscriptions
-az eventgrid system-topic event-subscription list \
-  --resource-group $RESOURCE_GROUP \
-  --system-topic-name $(az eventgrid system-topic list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv) \
-  -o table
+FUNCTION_APP=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+cd function_app
+func azure functionapp publish $FUNCTION_APP --python --build remote
+cd ..
 ```
 
-Expected: 2 active subscriptions (aci-container-deployments, aca-container-deployments)
+### 3. Enable Event Grid Subscriptions
+
+```bash
+az deployment sub create \
+  --location eastus \
+  --template-file infrastructure/main.bicep \
+  --parameters location=eastus \
+  --parameters resourceGroupName=qualys-scanner-rg \
+  --parameters qualysPod=US2 \
+  --parameters qualysAccessToken="your-qualys-token" \
+  --parameters enableEventGrid=true
+```
 
 ### 4. Test Scanning
 
@@ -189,19 +174,26 @@ Environment variables in Function App:
 ### Update Function Code
 
 ```bash
-./update.sh
+FUNCTION_APP=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+cd function_app
+func azure functionapp publish $FUNCTION_APP --python --build remote
+cd ..
 ```
 
 ### Update Qualys Token
 
+Redeploy infrastructure with new token:
+
 ```bash
-export QUALYS_ACCESS_TOKEN='your-new-token'
-./update-token.sh
+az deployment sub create \
+  --location eastus \
+  --template-file infrastructure/main.bicep \
+  --parameters qualysPod=US2 \
+  --parameters qualysAccessToken="your-new-token" \
+  --parameters enableEventGrid=true
 ```
 
-**If you don't have Key Vault permissions:**
-- Azure Portal: Key Vault → Secrets → QualysAccessToken → New Version
-- Or redeploy: `export QUALYS_ACCESS_TOKEN='...' && ./deploy.sh`
+Or update via Azure Portal: Key Vault → Secrets → QualysAccessToken → New Version
 
 ## Scan Caching
 
@@ -250,35 +242,16 @@ az functionapp config appsettings list \
   --query "[?name=='QUALYS_POD'].value" -o tsv
 ```
 
-Update token:
+Redeploy with new token:
 
 ```bash
-export QUALYS_ACCESS_TOKEN='your-valid-token'
-./update-token.sh
+az deployment sub create \
+  --location eastus \
+  --template-file infrastructure/main.bicep \
+  --parameters qualysPod=US2 \
+  --parameters qualysAccessToken="your-valid-token" \
+  --parameters enableEventGrid=true
 ```
-
-### Deployment Timeout
-
-If `deploy.sh` times out during function code deployment:
-
-1. The deployment often succeeds in the background despite the timeout
-2. Wait 1-2 minutes and check function app state:
-   ```bash
-   az functionapp show \
-     --resource-group qualys-scanner-rg \
-     --name $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
-     --query "state" -o tsv
-   ```
-3. If state is "Running", deployment succeeded - continue with Event Grid setup:
-   ```bash
-   ./update.sh
-   ```
-4. If deployment actually failed, retry:
-   ```bash
-   cd function_app
-   func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
-   cd ..
-   ```
 
 ### QScanner Image Missing
 

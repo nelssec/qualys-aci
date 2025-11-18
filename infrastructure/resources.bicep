@@ -46,6 +46,9 @@ param functionAppSku string = 'Y1'
 @description('URL to function app deployment package (zip file). Leave empty to skip automatic deployment.')
 param functionPackageUrl string = ''
 
+@description('Enable Event Grid subscriptions. Set to true after function code is deployed.')
+param enableEventGrid bool = false
+
 // Resource naming with Azure constraints
 // Storage: 3-24 chars, alphanumeric only (qscan=5 + uniqueString=13 = 18 chars)
 // Key Vault: 3-24 chars, alphanumeric and hyphens (qskv=4 + uniqueString=13 = 17 chars)
@@ -290,13 +293,63 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 }
 
 // Event Grid system topic for subscription-wide container monitoring
-// Event subscriptions are deployed separately after function code deployment
 resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
   name: '${namePrefix}-aci-topic'
   location: 'global'
   properties: {
     source: subscription().id
     topicType: 'Microsoft.Resources.Subscriptions'
+  }
+}
+
+// Event Grid subscriptions (enabled after function code deployment)
+resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = if (enableEventGrid) {
+  parent: aciEventGridTopic
+  name: 'aci-container-deployments'
+  properties: {
+    destination: {
+      endpointType: 'AzureFunction'
+      properties: {
+        resourceId: '${functionApp.id}/functions/EventProcessor'
+        maxEventsPerBatch: 1
+        preferredBatchSizeInKilobytes: 64
+      }
+    }
+    filter: {
+      includedEventTypes: [
+        'Microsoft.Resources.ResourceWriteSuccess'
+      ]
+    }
+    eventDeliverySchema: 'EventGridSchema'
+    retryPolicy: {
+      maxDeliveryAttempts: 30
+      eventTimeToLiveInMinutes: 1440
+    }
+  }
+}
+
+resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = if (enableEventGrid) {
+  parent: aciEventGridTopic
+  name: 'aca-container-deployments'
+  properties: {
+    destination: {
+      endpointType: 'AzureFunction'
+      properties: {
+        resourceId: '${functionApp.id}/functions/EventProcessor'
+        maxEventsPerBatch: 1
+        preferredBatchSizeInKilobytes: 64
+      }
+    }
+    filter: {
+      includedEventTypes: [
+        'Microsoft.Resources.ResourceWriteSuccess'
+      ]
+    }
+    eventDeliverySchema: 'EventGridSchema'
+    retryPolicy: {
+      maxDeliveryAttempts: 30
+      eventTimeToLiveInMinutes: 1440
+    }
   }
 }
 
