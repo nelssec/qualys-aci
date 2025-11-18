@@ -41,7 +41,17 @@ az deployment group create \
   --output none
 
 FUNCTION_APP=$(az functionapp list --resource-group "$RG" --query "[0].name" -o tsv)
+FUNCTION_APP_PRINCIPAL=$(az functionapp show --resource-group "$RG" --name "$FUNCTION_APP" --query "identity.principalId" -o tsv)
 echo "Function App: $FUNCTION_APP"
+echo ""
+
+echo "Assigning subscription-level Contributor role to function app..."
+az role assignment create \
+  --role "Contributor" \
+  --assignee-object-id "$FUNCTION_APP_PRINCIPAL" \
+  --assignee-principal-type ServicePrincipal \
+  --scope "/subscriptions/$(az account show --query id -o tsv)" \
+  --output none
 echo ""
 
 echo "[3/4] Deploying function code"
