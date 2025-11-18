@@ -34,7 +34,7 @@ module resources 'resources.bicep' = {
 }
 
 resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, resources.outputs.functionAppPrincipalId, 'Contributor')
+  name: guid(subscription().id, rg.id, 'Contributor')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
     principalId: resources.outputs.functionAppPrincipalId
