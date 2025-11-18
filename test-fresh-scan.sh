@@ -5,8 +5,8 @@
 set -e
 
 RG="qualys-scanner-rg"
-TEST_CONTAINER_NAME="test-dotnet-$(date +%s)"
-TEST_IMAGE="mcr.microsoft.com/dotnet/samples:aspnetapp"
+TEST_CONTAINER_NAME="test-alpine-$(date +%s)"
+TEST_IMAGE="mcr.microsoft.com/mirror/docker/library/alpine:3.19"
 
 echo "Testing Automated Container Scanning with Fresh Image"
 echo "Container: $TEST_CONTAINER_NAME"
