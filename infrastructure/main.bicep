@@ -11,6 +11,7 @@ param scanCacheHours int = 24
 param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
 param namePrefix string = 'qscan'
+param enableEventGrid bool = false
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
@@ -30,6 +31,7 @@ module resources 'resources.bicep' = {
     scanCacheHours: scanCacheHours
     functionAppSku: functionAppSku
     functionPackageUrl: functionPackageUrl
+    enableEventGrid: enableEventGrid
   }
 }
 
