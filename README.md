@@ -37,7 +37,7 @@ Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Sc
 export RESOURCE_GROUP="qualys-scanner-rg"
 export LOCATION="eastus"
 export QUALYS_POD="US2"  # Your Qualys POD (US1, US2, US3, EU1, etc.)
-export QUALYS_TOKEN="your-qualys-access-token"
+export QUALYS_ACCESS_TOKEN="your-qualys-access-token"
 ```
 
 ### 2. Deploy
@@ -160,13 +160,13 @@ Environment variables in Function App:
 ### Update Qualys Token
 
 ```bash
-export QUALYS_TOKEN='your-new-token'
+export QUALYS_ACCESS_TOKEN='your-new-token'
 ./update-token.sh
 ```
 
 **If you don't have Key Vault permissions:**
 - Azure Portal: Key Vault → Secrets → QualysAccessToken → New Version
-- Or redeploy: `export QUALYS_TOKEN='...' && ./deploy.sh`
+- Or redeploy: `export QUALYS_ACCESS_TOKEN='...' && ./deploy.sh`
 
 ## Scan Caching
 
@@ -207,7 +207,7 @@ az functionapp config appsettings list \
 Update token:
 
 ```bash
-export QUALYS_TOKEN='your-valid-token'
+export QUALYS_ACCESS_TOKEN='your-valid-token'
 ./update-token.sh
 ```
 

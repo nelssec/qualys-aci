@@ -6,15 +6,15 @@ set -e
 
 RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
 LOCATION="${LOCATION:-eastus}"
-QUALYS_TOKEN="${QUALYS_TOKEN:-}"
+QUALYS_ACCESS_TOKEN="${QUALYS_ACCESS_TOKEN:-}"
 QUALYS_POD="${QUALYS_POD:-US2}"
 FUNCTION_SKU="${FUNCTION_SKU:-EP1}"
 NOTIFICATION_EMAIL="${NOTIFICATION_EMAIL:-}"
 SCAN_CACHE_HOURS="${SCAN_CACHE_HOURS:-24}"
 
-if [ -z "$QUALYS_TOKEN" ]; then
-  echo "ERROR: QUALYS_TOKEN environment variable not set"
-  echo "Usage: export QUALYS_TOKEN='...' && ./deploy.sh"
+if [ -z "$QUALYS_ACCESS_TOKEN" ]; then
+  echo "ERROR: QUALYS_ACCESS_TOKEN environment variable not set"
+  echo "Usage: export QUALYS_ACCESS_TOKEN='...' && ./deploy.sh"
   exit 1
 fi
 
@@ -36,7 +36,7 @@ az deployment group create \
   --template-file infrastructure/main.bicep \
   --parameters location="$LOCATION" \
   --parameters qualysPod="$QUALYS_POD" \
-  --parameters qualysAccessToken="$QUALYS_TOKEN" \
+  --parameters qualysAccessToken="$QUALYS_ACCESS_TOKEN" \
   --parameters functionAppSku="$FUNCTION_SKU" \
   --parameters notificationEmail="$NOTIFICATION_EMAIL" \
   --parameters scanCacheHours="$SCAN_CACHE_HOURS" \

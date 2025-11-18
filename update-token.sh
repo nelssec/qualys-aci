@@ -5,11 +5,11 @@
 set -e
 
 RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
-QUALYS_TOKEN="${QUALYS_TOKEN:-}"
+QUALYS_ACCESS_TOKEN="${QUALYS_ACCESS_TOKEN:-}"
 
-if [ -z "$QUALYS_TOKEN" ]; then
-  echo "ERROR: QUALYS_TOKEN environment variable not set"
-  echo "Usage: export QUALYS_TOKEN='...' && ./update-token.sh"
+if [ -z "$QUALYS_ACCESS_TOKEN" ]; then
+  echo "ERROR: QUALYS_ACCESS_TOKEN environment variable not set"
+  echo "Usage: export QUALYS_ACCESS_TOKEN='...' && ./update-token.sh"
   exit 1
 fi
 
@@ -38,7 +38,7 @@ echo "Updating token..."
 if az keyvault secret set \
   --vault-name "$KV_NAME" \
   --name "QualysAccessToken" \
-  --value "$QUALYS_TOKEN" \
+  --value "$QUALYS_ACCESS_TOKEN" \
   --output none 2>/dev/null; then
   echo "Token updated successfully"
 else
@@ -58,7 +58,7 @@ else
   echo "  3. Create new version with updated token"
   echo ""
   echo "Alternative: Redeploy infrastructure (this will update the token):"
-  echo "  export QUALYS_TOKEN='your-token'"
+  echo "  export QUALYS_ACCESS_TOKEN='your-token'"
   echo "  ./deploy.sh"
   exit 1
 fi
