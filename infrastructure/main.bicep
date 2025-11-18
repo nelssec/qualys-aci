@@ -34,7 +34,7 @@ var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
 var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
-var keyVaultName = '${namePrefix}-kv-${uniqueString(resourceGroup().id)}'
+var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -252,7 +252,7 @@ resource aciContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2
 
 resource aciEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
   name: '${namePrefix}-aci-topic'
-  location: location
+  location: 'global'
   properties: {
     source: resourceGroup().id
     topicType: 'Microsoft.Resources.ResourceGroups'
