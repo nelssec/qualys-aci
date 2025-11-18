@@ -40,13 +40,8 @@ if ! az acr repository show --name $ACR_NAME --repository qualys/qscanner >/dev/
 fi
 
 echo ""
-echo "=== 2. Creating test qscanner container ==="
-TEST_IMAGE="mcr.microsoft.com/azuredocs/aci-helloworld:latest"
-CONTAINER_NAME="qscanner-manual-test-$(date +%s)"
-
-echo "Container name: $CONTAINER_NAME"
-echo "Scanning image: $TEST_IMAGE"
-echo ""
+echo "=== 2. Finding qscanner binary location ==="
+FIND_CONTAINER_NAME="qscanner-find-$(date +%s)"
 
 # Enable ACR admin for pulling
 echo "Enabling ACR admin credentials..."
@@ -54,6 +49,47 @@ az acr update --name $ACR_NAME --admin-enabled true --output none
 
 ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query "username" -o tsv)
 ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" -o tsv)
+
+# Create a container to find qscanner location
+echo "Creating container to locate qscanner binary..."
+az container create \
+  --resource-group $RG \
+  --name $FIND_CONTAINER_NAME \
+  --image "${ACR_SERVER}/qualys/qscanner:latest" \
+  --registry-login-server $ACR_SERVER \
+  --registry-username $ACR_USERNAME \
+  --registry-password $ACR_PASSWORD \
+  --cpu 1 \
+  --memory 1 \
+  --restart-policy Never \
+  --os-type Linux \
+  --command-line "/bin/sh -c 'which qscanner || find / -name qscanner -type f 2>/dev/null | head -5'" \
+  --output none
+
+sleep 15
+
+echo "=== qscanner location ==="
+az container logs --resource-group $RG --name $FIND_CONTAINER_NAME 2>&1 || echo "No logs"
+
+QSCANNER_PATH=$(az container logs --resource-group $RG --name $FIND_CONTAINER_NAME 2>/dev/null | head -1 | tr -d '\r')
+
+az container delete --resource-group $RG --name $FIND_CONTAINER_NAME --yes --output none
+
+if [ -z "$QSCANNER_PATH" ]; then
+  echo "❌ Could not find qscanner binary"
+  exit 1
+fi
+
+echo "✓ Found qscanner at: $QSCANNER_PATH"
+echo ""
+
+echo "=== 3. Creating test qscanner container ==="
+TEST_IMAGE="mcr.microsoft.com/azuredocs/aci-helloworld:latest"
+CONTAINER_NAME="qscanner-manual-test-$(date +%s)"
+
+echo "Container name: $CONTAINER_NAME"
+echo "Scanning image: $TEST_IMAGE"
+echo ""
 
 # Create qscanner container with the same settings as the function would use
 az container create \
@@ -69,7 +105,7 @@ az container create \
   --os-type Linux \
   --environment-variables \
     QUALYS_ACCESS_TOKEN="$QUALYS_TOKEN" \
-  --command-line "/bin/sh -c \"/qscanner image ${TEST_IMAGE} --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls\"" \
+  --command-line "/bin/sh -c \"${QSCANNER_PATH} image ${TEST_IMAGE} --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls\"" \
   --output none
 
 echo "✓ Container created"
@@ -78,7 +114,7 @@ echo "Waiting 30 seconds for container to start..."
 sleep 30
 
 echo ""
-echo "=== 3. Checking container status ==="
+echo "=== 4. Checking container status ==="
 az container show \
   --resource-group $RG \
   --name $CONTAINER_NAME \
@@ -86,7 +122,7 @@ az container show \
   --output table
 
 echo ""
-echo "=== 4. Container events ==="
+echo "=== 5. Container events ==="
 az container show \
   --resource-group $RG \
   --name $CONTAINER_NAME \
@@ -94,13 +130,13 @@ az container show \
   --output table
 
 echo ""
-echo "=== 5. Container logs ==="
+echo "=== 6. Container logs ==="
 az container logs \
   --resource-group $RG \
   --name $CONTAINER_NAME 2>&1 || echo "No logs available"
 
 echo ""
-echo "=== 6. Diagnosis ==="
+echo "=== 7. Diagnosis ==="
 STATE=$(az container show --resource-group $RG --name $CONTAINER_NAME --query "instanceView.state" -o tsv)
 EXIT_CODE=$(az container show --resource-group $RG --name $CONTAINER_NAME --query "containers[0].instanceView.currentState.exitCode" -o tsv)
 
