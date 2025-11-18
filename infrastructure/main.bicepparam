@@ -7,4 +7,4 @@ param qualysAccessToken = ''
 param notificationEmail = ''
 param notifySeverityThreshold = 'HIGH'
 param scanCacheHours = 24
-param functionAppSku = 'EP1'
+param functionAppSku = 'Y1'

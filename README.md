@@ -33,6 +33,22 @@ Event Grid captures ACI/ACA deployment events and triggers an Azure Function. Th
 - Python 3.11 (for local development)
 - For tenant-wide: Management Group permissions
 
+### Quota Requirements
+
+The default deployment uses Y1 (Consumption) plan for Azure Functions, which requires quota for "Y1 VMs" in your subscription.
+
+Check quota:
+```bash
+az vm list-usage --location eastus --query "[?name.value=='Y1'].{Current:currentValue,Limit:limit}"
+```
+
+If Y1 quota is 0, request increase:
+1. Azure Portal > Subscriptions > Usage + quotas
+2. Search for "Y1 VMs" in your region
+3. Request increase from 0 to 1
+
+Alternative: Use EP1, P1v3, or other SKU by changing `functionAppSku` in `main.bicepparam` (costs more).
+
 ### Option 1: Single Subscription
 
 Monitor container deployments in one subscription.
