@@ -79,6 +79,21 @@ az eventgrid system-topic event-subscription list \
 
 Expected: 2 active subscriptions (aci-container-deployments, aca-container-deployments)
 
+### 4. Test Scanning
+
+Deploy a test container to trigger automatic scanning:
+
+```bash
+az container create \
+  --resource-group qualys-scanner-rg \
+  --name test-scan \
+  --image mcr.microsoft.com/dotnet/runtime:8.0 \
+  --os-type Linux \
+  --restart-policy Never
+```
+
+Check results in Qualys Dashboard (Container Security) or Application Insights (EventProcessor logs).
+
 ## How It Works
 
 1. Container deployed to ACI or ACA anywhere in subscription
@@ -199,6 +214,17 @@ az eventgrid system-topic event-subscription list \
 
 Expected: 2 subscriptions with `ProvisioningState: Succeeded`
 
+Test by deploying a container:
+
+```bash
+az container create \
+  --resource-group qualys-scanner-rg \
+  --name test-$(date +%s) \
+  --image mcr.microsoft.com/dotnet/runtime:8.0 \
+  --os-type Linux \
+  --restart-policy Never
+```
+
 ### Results Not in Qualys
 
 Verify token and POD:
@@ -217,6 +243,29 @@ Update token:
 export QUALYS_ACCESS_TOKEN='your-valid-token'
 ./update-token.sh
 ```
+
+### Deployment Timeout
+
+If `deploy.sh` times out during function code deployment:
+
+1. The deployment often succeeds in the background despite the timeout
+2. Wait 1-2 minutes and check function app state:
+   ```bash
+   az functionapp show \
+     --resource-group qualys-scanner-rg \
+     --name $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) \
+     --query "state" -o tsv
+   ```
+3. If state is "Running", deployment succeeded - continue with Event Grid setup:
+   ```bash
+   ./update.sh
+   ```
+4. If deployment actually failed, retry:
+   ```bash
+   cd function_app
+   func azure functionapp publish $(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv) --python --build remote
+   cd ..
+   ```
 
 ### QScanner Image Missing
 

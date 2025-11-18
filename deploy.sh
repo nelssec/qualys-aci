@@ -25,12 +25,10 @@ echo "Qualys POD: $QUALYS_POD"
 echo "Function SKU: $FUNCTION_SKU"
 echo ""
 
-# Step 1: Create resource group
 echo "[1/4] Creating resource group"
 az group create --name "$RG" --location "$LOCATION" --output none
 
-# Step 2: Deploy infrastructure
-echo "[2/4] Deploying infrastructure (Function App, Storage, Key Vault, Event Grid Topic)"
+echo "[2/4] Deploying infrastructure"
 az deployment group create \
   --resource-group "$RG" \
   --template-file infrastructure/main.bicep \
@@ -46,14 +44,37 @@ FUNCTION_APP=$(az functionapp list --resource-group "$RG" --query "[0].name" -o 
 echo "Function App: $FUNCTION_APP"
 echo ""
 
-# Step 3: Deploy function code
 echo "[3/4] Deploying function code"
+echo "This may take 5-10 minutes..."
 cd function_app
-func azure functionapp publish "$FUNCTION_APP" --python --build remote
+
+if timeout 600 func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
+  echo "Function code deployed successfully"
+else
+  EXIT_CODE=$?
+  if [ $EXIT_CODE -eq 124 ]; then
+    echo ""
+    echo "WARNING: Deployment timed out waiting for SCM, but may have succeeded in background"
+    echo "Waiting 30 seconds for deployment to complete..."
+    sleep 30
+
+    STATE=$(az functionapp show --resource-group "$RG" --name "$FUNCTION_APP" --query "state" -o tsv)
+    if [ "$STATE" = "Running" ]; then
+      echo "Function app is running - deployment likely succeeded"
+    else
+      echo "Function app state: $STATE - you may need to restart it"
+      echo "Run: az functionapp restart --resource-group $RG --name $FUNCTION_APP"
+    fi
+  else
+    echo "ERROR: Function deployment failed with exit code $EXIT_CODE"
+    cd ..
+    exit 1
+  fi
+fi
+
 cd ..
 echo ""
 
-# Step 4: Deploy Event Grid subscriptions
 echo "[4/4] Deploying Event Grid subscriptions"
 EVENT_GRID_TOPIC=$(az eventgrid system-topic list --resource-group "$RG" --query "[0].name" -o tsv)
 az deployment group create \
@@ -74,4 +95,5 @@ echo ""
 echo "Subscription-wide monitoring is now active."
 echo "All container deployments across this subscription will be automatically scanned."
 echo ""
-echo "Test with: ./test-automation.sh"
+echo "Test by deploying a container:"
+echo "  az container create --resource-group $RG --name test-scan --image mcr.microsoft.com/dotnet/runtime:8.0 --os-type Linux --restart-policy Never"
