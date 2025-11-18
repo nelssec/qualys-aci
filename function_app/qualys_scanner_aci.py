@@ -361,26 +361,31 @@ class QScannerACI:
         """
         Build qscanner command for container
 
-        Based on: ./qscanner image customer-service:3 --pod US2 --access-token ****
-                  --scan-types os,sca,secret --format json --skip-verify-tls
+        The qscanner Docker image has qscanner as its ENTRYPOINT, so we just pass arguments.
+        Based on: docker run --env QUALYS_ACCESS_TOKEN=$TOKEN qualys/qscanner:latest image image:tag --pod US2 --scan-types os,sca,secret --format json --skip-verify-tls
 
         Args:
             image_id: Full image identifier to scan (e.g., mcr.microsoft.com/image:tag)
             custom_tags: Optional tags for tracking
 
         Returns:
-            Command as list for ACI container
+            Command as list for ACI container (arguments only, not binary name)
         """
-        # Build the qscanner command string
-        cmd_str = f'/qscanner image {image_id} --pod {self.qualys_pod} --scan-types os,sca,secret --format json --skip-verify-tls'
+        cmd_parts = [
+            'image',              # qscanner subcommand
+            image_id,             # Full image name with registry
+            '--pod', self.qualys_pod,
+            '--scan-types', 'os,sca,secret',  # Scan types: OS packages, SCA, secrets
+            '--format', 'json',   # JSON output for parsing
+            '--skip-verify-tls'   # Skip TLS verification for registries
+        ]
 
         # Add custom tags for tracking
         if custom_tags:
             for key, value in custom_tags.items():
-                cmd_str += f' --tag {key}={value}'
+                cmd_parts.extend(['--tag', f'{key}={value}'])
 
-        # Use shell wrapper to execute qscanner from its absolute path
-        return ['/bin/sh', '-c', cmd_str]
+        return cmd_parts
 
     def _parse_qscanner_output(self, output: str) -> Dict:
         """Parse qscanner JSON output"""
