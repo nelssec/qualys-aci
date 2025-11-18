@@ -101,6 +101,12 @@ az container delete --resource-group "$RG" --name "$TEST_CONTAINER" --yes
 
 ## Common Issues
 
+### QScanner Containers in Logs
+
+You may see Event Grid events for containers starting with "qscanner-" in the logs. These are automatically filtered out by the EventProcessor to prevent infinite loops. The EventProcessor skips any container with a name starting with "qscanner-" since these are the scanner containers themselves, not containers to be scanned.
+
+Expected log message: `Skipping qscanner container: qscanner-*`
+
 ### Scans Not Triggering
 
 Check Event Grid subscription:
