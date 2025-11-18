@@ -372,6 +372,7 @@ class QScannerACI:
             Command as list for ACI container
         """
         cmd_parts = [
+            'qscanner',           # qscanner binary
             'image',              # qscanner subcommand
             image_id,             # Full image name with registry
             '--pod', self.qualys_pod,
