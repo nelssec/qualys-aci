@@ -41,85 +41,46 @@ resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
-resource aciEventSubscription 'Microsoft.EventGrid/eventSubscriptions@2022-06-15' = if (enableEventGrid) {
-  name: 'qualys-aci-container-deployments'
+resource activityLogDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'activity-log-to-eventhub'
   scope: subscription()
   properties: {
-    destination: {
-      endpointType: 'AzureFunction'
-      properties: {
-        resourceId: '${resources.outputs.functionAppId}/functions/EventProcessor'
-        maxEventsPerBatch: 1
-        preferredBatchSizeInKilobytes: 64
+    eventHubAuthorizationRuleId: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.EventHub/namespaces/${resources.outputs.eventHubNamespace}/authorizationRules/RootManageSharedAccessKey'
+    eventHubName: resources.outputs.activityLogHub
+    logs: [
+      {
+        category: 'Administrative'
+        enabled: true
       }
-    }
-    filter: {
-      includedEventTypes: [
-        'Microsoft.Resources.ResourceWriteSuccess'
-      ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.ContainerInstance'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.ContainerInstance/containerGroups/write'
-          ]
-        }
-      ]
-    }
-    eventDeliverySchema: 'EventGridSchema'
-    retryPolicy: {
-      maxDeliveryAttempts: 30
-      eventTimeToLiveInMinutes: 1440
-    }
-  }
-}
-
-resource acaEventSubscription 'Microsoft.EventGrid/eventSubscriptions@2022-06-15' = if (enableEventGrid) {
-  name: 'qualys-aca-container-deployments'
-  scope: subscription()
-  properties: {
-    destination: {
-      endpointType: 'AzureFunction'
-      properties: {
-        resourceId: '${resources.outputs.functionAppId}/functions/EventProcessor'
-        maxEventsPerBatch: 1
-        preferredBatchSizeInKilobytes: 64
+      {
+        category: 'Security'
+        enabled: false
       }
-    }
-    filter: {
-      includedEventTypes: [
-        'Microsoft.Resources.ResourceWriteSuccess'
-      ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.App'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.App/containerApps/write'
-          ]
-        }
-      ]
-    }
-    eventDeliverySchema: 'EventGridSchema'
-    retryPolicy: {
-      maxDeliveryAttempts: 30
-      eventTimeToLiveInMinutes: 1440
-    }
+      {
+        category: 'ServiceHealth'
+        enabled: false
+      }
+      {
+        category: 'Alert'
+        enabled: false
+      }
+      {
+        category: 'Recommendation'
+        enabled: false
+      }
+      {
+        category: 'Policy'
+        enabled: false
+      }
+      {
+        category: 'Autoscale'
+        enabled: false
+      }
+      {
+        category: 'ResourceHealth'
+        enabled: false
+      }
+    ]
   }
 }
 

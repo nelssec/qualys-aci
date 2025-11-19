@@ -234,6 +234,14 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'ENABLE_ORYX_BUILD'
           value: 'true'
         }
+        {
+          name: 'EVENTHUB_CONNECTION_STRING'
+          value: activityLogHubPolicy.listKeys().primaryConnectionString
+        }
+        {
+          name: 'EVENTHUB_NAME'
+          value: activityLogHub.name
+        }
       ], !empty(functionPackageUrl) ? [
         {
           name: 'WEBSITE_RUN_FROM_PACKAGE'
@@ -257,6 +265,53 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
+resource eventHubNamespace 'Microsoft.EventHub/namespaces@2023-01-01-preview' = {
+  name: 'qscan-${uniqueString(resourceGroup().id)}'
+  location: location
+  sku: {
+    name: 'Basic'
+    tier: 'Basic'
+    capacity: 1
+  }
+  properties: {
+    minimumTlsVersion: '1.2'
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: false
+    zoneRedundant: false
+    isAutoInflateEnabled: false
+    kafkaEnabled: false
+  }
+}
+
+resource activityLogHub 'Microsoft.EventHub/namespaces/eventhubs@2023-01-01-preview' = {
+  parent: eventHubNamespace
+  name: 'activity-log'
+  properties: {
+    messageRetentionInDays: 1
+    partitionCount: 2
+  }
+}
+
+resource activityLogHubPolicy 'Microsoft.EventHub/namespaces/eventhubs/authorizationRules@2023-01-01-preview' = {
+  parent: activityLogHub
+  name: 'FunctionAppListen'
+  properties: {
+    rights: [
+      'Listen'
+    ]
+  }
+}
+
+resource activityLogHubSendPolicy 'Microsoft.EventHub/namespaces/eventhubs/authorizationRules@2023-01-01-preview' = {
+  parent: activityLogHub
+  name: 'DiagnosticsSend'
+  properties: {
+    rights: [
+      'Send'
+    ]
+  }
+}
+
 output functionAppName string = functionApp.name
 output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
 output storageAccountName string = storageAccount.name
@@ -264,3 +319,7 @@ output keyVaultName string = keyVault.name
 output appInsightsName string = appInsights.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 output functionAppId string = functionApp.id
+output eventHubNamespace string = eventHubNamespace.name
+output activityLogHub string = activityLogHub.name
+output eventHubConnectionString string = activityLogHubPolicy.listKeys().primaryConnectionString
+output diagnosticsSendConnectionString string = activityLogHubSendPolicy.listKeys().primaryConnectionString
