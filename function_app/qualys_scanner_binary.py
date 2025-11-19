@@ -276,12 +276,18 @@ class QScannerBinary:
             )
 
             # Log output
-            if result.returncode not in [0, 1]:
-                logging.error(f'qscanner exited with code {result.returncode}')
-                logging.error(f'stderr: {result.stderr}')
-                raise Exception(f'qscanner failed with exit code {result.returncode}')
-
             logging.info(f'qscanner completed with exit code {result.returncode}')
+
+            # Log stdout and stderr for debugging
+            if result.stdout:
+                logging.info(f'qscanner stdout (first 500 chars): {result.stdout[:500]}')
+            if result.stderr:
+                logging.warning(f'qscanner stderr: {result.stderr}')
+
+            # Exit codes 0 and 1 are acceptable (1 = vulnerabilities found)
+            if result.returncode not in [0, 1]:
+                logging.error(f'qscanner exited with unexpected code {result.returncode}')
+                raise Exception(f'qscanner failed with exit code {result.returncode}')
 
             # Return stdout (JSON output)
             return result.stdout
