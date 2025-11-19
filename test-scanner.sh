@@ -7,9 +7,7 @@ set -e
 RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
 FUNCTION_APP=""
 
-echo "========================================="
 echo "Qualys Scanner Test Deployment"
-echo "========================================="
 echo ""
 
 # Get function app name
@@ -61,9 +59,8 @@ for i in "${!IMAGES[@]}"; do
   echo ""
 done
 
-echo "========================================="
-echo "Deployment Complete!"
-echo "========================================="
+echo ""
+echo "Deployment Complete"
 echo ""
 echo "Test containers deployed:"
 for name in "${CONTAINER_NAMES[@]}"; do
@@ -81,8 +78,6 @@ echo "  - Each event should trigger a container image scan"
 echo "  - Scans will show 'EVENT GRID EVENT RECEIVED' messages"
 echo "  - qscanner binary will auto-download on first scan (if not cached)"
 echo ""
-echo "========================================="
-echo ""
 
 # Wait a moment for containers to be fully created
 sleep 5
@@ -92,9 +87,7 @@ echo "Starting log stream (Ctrl+C to exit)..."
 func azure functionapp logstream "$FUNCTION_APP" 2>&1 | grep -E "(EVENT GRID|EventProcessor|qscanner|Scanning|vulnerabilities)" --line-buffered || true
 
 echo ""
-echo "========================================="
 echo "Test Complete"
-echo "========================================="
 echo ""
 echo "View scan results:"
 echo "  1. Qualys Dashboard: https://qualysguard.qg2.apps.qualys.com/"

@@ -4,9 +4,7 @@ set -e
 
 RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
 
-echo "========================================="
 echo "Cleaning up Qualys Scanner Deployment"
-echo "========================================="
 echo "Resource Group: $RG"
 echo ""
 
@@ -69,14 +67,11 @@ else
 fi
 
 echo ""
-echo "========================================="
-echo "Cleanup Complete!"
-echo "========================================="
+echo "Cleanup Complete"
 echo ""
 echo "Wait for resource group deletion to complete:"
 echo "  az group show --name $RG"
 echo ""
 echo "When deletion is complete (returns 'ResourceGroupNotFound'), deploy fresh:"
 echo "  ./deploy.sh"
-echo "  OR follow manual deployment steps in README.md"
 echo ""

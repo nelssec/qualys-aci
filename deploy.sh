@@ -15,9 +15,7 @@ if [ -z "$QUALYS_ACCESS_TOKEN" ]; then
   exit 1
 fi
 
-echo "========================================="
 echo "Qualys Container Scanner Deployment"
-echo "========================================="
 echo "Subscription: $(az account show --query name -o tsv)"
 echo "Resource Group: $RG"
 echo "Location: $LOCATION"
@@ -91,23 +89,18 @@ echo "[2/3] Deploying function code..."
 echo "This may take 3-5 minutes for remote build..."
 cd function_app
 
-if timeout 600 func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
+if func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
   echo "Function code deployed successfully"
 else
   EXIT_CODE=$?
-  if [ $EXIT_CODE -eq 124 ]; then
-    echo "WARNING: Deployment timed out, checking function app state..."
-    sleep 30
-    STATE=$(az functionapp show --resource-group "$RG" --name "$FUNCTION_APP" --query "state" -o tsv)
-    if [ "$STATE" = "Running" ]; then
-      echo "Function app is running - deployment likely succeeded"
-    else
-      echo "ERROR: Function app state: $STATE"
-      cd ..
-      exit 1
-    fi
+  echo "WARNING: Function deployment returned exit code $EXIT_CODE"
+  echo "Checking function app state..."
+  sleep 10
+  STATE=$(az functionapp show --resource-group "$RG" --name "$FUNCTION_APP" --query "state" -o tsv)
+  if [ "$STATE" = "Running" ]; then
+    echo "Function app is running - continuing deployment"
   else
-    echo "ERROR: Function deployment failed with exit code $EXIT_CODE"
+    echo "ERROR: Function app state: $STATE"
     cd ..
     exit 1
   fi
@@ -134,19 +127,16 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
-echo "========================================="
-echo "Deployment Complete!"
-echo "========================================="
+echo "Deployment Complete"
 echo ""
 echo "Function App: $FUNCTION_APP"
 echo "Key Vault: $(az keyvault list --resource-group $RG --query "[0].name" -o tsv)"
 echo "Storage: $(az storage account list --resource-group $RG --query "[0].name" -o tsv)"
 echo ""
-echo "Subscription-wide container scanning is now active!"
+echo "Subscription-wide container scanning is now active"
 echo ""
 echo "Test by deploying a container:"
-echo "  az container create --resource-group $RG --name test-scan \\"
-echo "    --image mcr.microsoft.com/dotnet/runtime:8.0 --os-type Linux --restart-policy Never"
+echo "  az container create --resource-group $RG --name test-scan --image mcr.microsoft.com/dotnet/runtime:8.0 --os-type Linux --cpu 1 --memory 1 --restart-policy Never"
 echo ""
 echo "Monitor logs:"
 echo "  func azure functionapp logstream $FUNCTION_APP"
