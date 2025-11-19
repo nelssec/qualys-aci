@@ -37,7 +37,21 @@ Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Sc
 
 ## Quick Start
 
-### 1. Deploy Infrastructure
+**Option 1: Automated Deployment (Recommended for Development/Testing)**
+
+```bash
+export QUALYS_ACCESS_TOKEN="your-qualys-token"
+export QUALYS_POD="US2"
+./deploy.sh
+```
+
+Runs all 3 steps automatically with error checking and timeout handling.
+
+**Option 2: Manual Bicep Deployment (Production/Enterprise)**
+
+Use this for production deployments, CI/CD pipelines, or environments with existing Event Grid infrastructure.
+
+### Step 1: Deploy Infrastructure
 
 ```bash
 az deployment sub create \
@@ -47,9 +61,7 @@ az deployment sub create \
   --parameters qualysAccessToken="your-qualys-token"
 ```
 
-This creates: Resource group, Function App, Storage, Key Vault, ACR
-
-### 2. Deploy Function Code
+### Step 2: Deploy Function Code
 
 ```bash
 FUNCTION_APP=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
@@ -58,7 +70,7 @@ func azure functionapp publish $FUNCTION_APP --python --build remote
 cd ..
 ```
 
-### 3. Enable Event Grid
+### Step 3: Enable Event Grid
 
 ```bash
 az deployment sub create \
@@ -69,18 +81,17 @@ az deployment sub create \
   --parameters enableEventGrid=true
 ```
 
-**Production Note:** If you have an existing subscription-level Event Grid system topic, add:
+**For environments with existing Event Grid system topic:**
 ```bash
+# Check for existing topic
+az eventgrid system-topic list --query "[?properties.topicType=='Microsoft.Resources.Subscriptions'].{Name:name,RG:resourceGroup}" -o table
+
+# Add to step 3:
 --parameters existingSystemTopicName="<topic-name>" \
 --parameters existingSystemTopicResourceGroup="<topic-rg>"
 ```
 
-Check for existing topics:
-```bash
-az eventgrid system-topic list --query "[?properties.topicType=='Microsoft.Resources.Subscriptions'].{Name:name,RG:resourceGroup}" -o table
-```
-
-### 4. Test Scanning
+## Test Scanning
 
 Deploy a test container to trigger automatic scanning:
 
