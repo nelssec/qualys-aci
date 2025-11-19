@@ -45,21 +45,27 @@ class QScannerBinary:
         Returns:
             Path to qscanner binary
         """
+        # Check for bundled binary first (deployed with function app)
+        bundled_path = os.path.join(os.path.dirname(__file__), 'qscanner')
+        if os.path.isfile(bundled_path) and os.access(bundled_path, os.X_OK):
+            logging.info(f'Using bundled qscanner binary at {bundled_path}')
+            return bundled_path
+
         # Persistent storage path (survives across function executions)
         persistent_path = '/home/qscanner'
 
-        # Check if binary already exists
+        # Check if binary already exists in persistent storage
         if os.path.isfile(persistent_path) and os.access(persistent_path, os.X_OK):
             logging.info(f'Using existing qscanner binary at {persistent_path}')
             return persistent_path
 
-        # Download binary
+        # Download binary as last resort
         logging.info('qscanner binary not found, downloading latest version...')
         return self._download_qscanner_binary(persistent_path)
 
     def _download_qscanner_binary(self, target_path: str) -> str:
         """
-        Download qscanner binary from Qualys CDN
+        Download qscanner binary from Qualys CASK CDN
 
         Args:
             target_path: Where to save the binary
@@ -67,20 +73,43 @@ class QScannerBinary:
         Returns:
             Path to downloaded binary
         """
-        version = os.environ.get('QSCANNER_VERSION', '4.6.0')
-        download_url = f'https://cdn.qualys.com/qscanner/{version}/qscanner_{version}_linux_amd64'
+        version = os.environ.get('QSCANNER_VERSION', '4.6.0-4')
+        download_url = f'https://cask.qg1.apps.qualys.com/cs/p/MwmsS_SfM0RTBIc5r-hpCUmY34xkB4n93rJNAfOf_BH5BnExjNT7P-48_03RUMr_/n/qualysincgov/b/us01-cask-artifacts/o/cs/qscanner/{version}/qscanner-{version}.linux-amd64.tar.gz'
 
         try:
-            logging.info(f'Downloading qscanner v{version} from {download_url}')
+            import tarfile
+            import tempfile
+
+            logging.info(f'Downloading qscanner v{version} from Qualys CASK')
 
             # Create parent directory if needed
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-            # Download binary
-            urllib.request.urlretrieve(download_url, target_path)
+            # Download tar.gz to temp file
+            temp_dir = tempfile.mkdtemp()
+            tar_path = os.path.join(temp_dir, 'qscanner.tar.gz')
+
+            logging.info(f'Downloading archive to {tar_path}')
+            urllib.request.urlretrieve(download_url, tar_path)
+
+            # Extract tar.gz
+            logging.info('Extracting qscanner binary from archive')
+            with tarfile.open(tar_path, 'r:gz') as tar:
+                tar.extractall(temp_dir)
+
+            # Move binary to target location
+            binary_source = os.path.join(temp_dir, 'qscanner')
+            if not os.path.isfile(binary_source):
+                raise Exception(f'Binary not found in archive at {binary_source}')
+
+            import shutil
+            shutil.move(binary_source, target_path)
 
             # Make executable
             os.chmod(target_path, 0o755)
+
+            # Clean up temp directory
+            shutil.rmtree(temp_dir)
 
             # Verify
             if os.path.isfile(target_path) and os.access(target_path, os.X_OK):

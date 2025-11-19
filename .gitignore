@@ -67,3 +67,6 @@ function_app.zip
 .azure/
 test_results/
 scratch/
+function_app/qscanner
+function_app/qscanner.sha256
+function_app/qscanner.signature
