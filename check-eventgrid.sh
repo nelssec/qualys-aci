@@ -11,9 +11,9 @@ echo ""
 
 # Check if system topic exists
 echo "[1/3] Checking Event Grid System Topic..."
-TOPIC_NAME=$(az eventgrid system-topic list --resource-group "$RG" --query "[0].name" -o tsv 2>/dev/null || echo "")
+TOPIC_NAME=$(az eventgrid system-topic list --resource-group "$RG" --query "[?topicType=='Microsoft.Resources.Subscriptions'].name | [0]" -o tsv 2>/dev/null || echo "")
 if [ -z "$TOPIC_NAME" ]; then
-  echo "  [ERROR] No Event Grid system topic found"
+  echo "  [ERROR] No subscription-level Event Grid system topic found"
   echo "          Event Grid was never deployed"
 else
   echo "  [OK] System Topic: $TOPIC_NAME"
