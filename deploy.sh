@@ -1,6 +1,6 @@
 #!/bin/bash
 # Automated 3-step deployment for Qualys Container Scanner
-# For production customers, use the manual Bicep commands in README.md
+# Handles cleanup, waits for completion, and deploys fresh
 
 set -e
 
@@ -22,6 +22,48 @@ echo "Subscription: $(az account show --query name -o tsv)"
 echo "Resource Group: $RG"
 echo "Location: $LOCATION"
 echo "Qualys POD: $QUALYS_POD"
+echo ""
+
+# Step 0: Check for resource group and wait if deleting
+echo "[0/3] Checking for existing resources..."
+RG_STATE=$(az group show --name "$RG" --query 'properties.provisioningState' -o tsv 2>/dev/null || echo "NotFound")
+
+if [ "$RG_STATE" == "Deleting" ]; then
+  echo "Resource group is currently being deleted. Waiting for completion..."
+  while [ "$(az group show --name $RG --query 'properties.provisioningState' -o tsv 2>/dev/null || echo 'NotFound')" == "Deleting" ]; do
+    echo "  Still deleting... (checking again in 10s)"
+    sleep 10
+  done
+  echo "Resource group deletion complete!"
+elif [ "$RG_STATE" != "NotFound" ]; then
+  echo "WARNING: Resource group exists in state: $RG_STATE"
+  echo "This may cause deployment conflicts. Run ./cleanup.sh first for a clean deployment."
+  read -p "Continue anyway? (yes/no): " -r
+  if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+    echo "Deployment cancelled. Run ./cleanup.sh to remove old resources."
+    exit 0
+  fi
+fi
+
+# Check for orphaned role assignments
+echo "Checking for orphaned subscription-level role assignments..."
+SUB_ID=$(az account show --query id -o tsv)
+ORPHANED=$(az role assignment list \
+  --role "Contributor" \
+  --scope "/subscriptions/$SUB_ID" \
+  --query "[?principalType=='ServicePrincipal' && principalName==null].id" -o tsv)
+
+if [ ! -z "$ORPHANED" ]; then
+  echo "Found orphaned role assignments, cleaning up..."
+  for assignment in $ORPHANED; do
+    echo "  Deleting: $assignment"
+    az role assignment delete --ids "$assignment" 2>/dev/null || true
+  done
+  echo "Cleanup complete!"
+else
+  echo "No orphaned role assignments found"
+fi
+
 echo ""
 
 # Step 1: Deploy Infrastructure
@@ -46,7 +88,7 @@ echo ""
 
 # Step 2: Deploy Function Code
 echo "[2/3] Deploying function code..."
-echo "This may take 5-10 minutes..."
+echo "This may take 3-5 minutes for remote build..."
 cd function_app
 
 if timeout 600 func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
@@ -58,7 +100,7 @@ else
     sleep 30
     STATE=$(az functionapp show --resource-group "$RG" --name "$FUNCTION_APP" --query "state" -o tsv)
     if [ "$STATE" = "Running" ]; then
-      echo "Function app is running - deployment succeeded"
+      echo "Function app is running - deployment likely succeeded"
     else
       echo "ERROR: Function app state: $STATE"
       cd ..
@@ -99,11 +141,13 @@ echo ""
 echo "Function App: $FUNCTION_APP"
 echo "Key Vault: $(az keyvault list --resource-group $RG --query "[0].name" -o tsv)"
 echo "Storage: $(az storage account list --resource-group $RG --query "[0].name" -o tsv)"
-echo "ACR: $(az acr list --resource-group $RG --query "[0].name" -o tsv)"
 echo ""
 echo "Subscription-wide container scanning is now active!"
 echo ""
 echo "Test by deploying a container:"
 echo "  az container create --resource-group $RG --name test-scan \\"
 echo "    --image mcr.microsoft.com/dotnet/runtime:8.0 --os-type Linux --restart-policy Never"
+echo ""
+echo "Monitor logs:"
+echo "  func azure functionapp logstream $FUNCTION_APP"
 echo ""
