@@ -49,15 +49,6 @@ param functionPackageUrl string = ''
 @description('Enable Event Grid subscriptions. Set to true after function code is deployed.')
 param enableEventGrid bool = false
 
-@description('Use existing subscription-level system topic instead of creating new one')
-param useExistingSystemTopic bool = true
-
-@description('Existing system topic name (if useExistingSystemTopic is true)')
-param existingSystemTopicName string = ''
-
-@description('Existing system topic resource group (if useExistingSystemTopic is true)')
-param existingSystemTopicResourceGroup string = 'Default-EventGrid'
-
 // Resource naming with Azure constraints
 // Storage: 3-24 chars, alphanumeric only (qscan=5 + uniqueString=13 = 18 chars)
 // Key Vault: 3-24 chars, alphanumeric and hyphens (qskv=4 + uniqueString=13 = 17 chars)
@@ -274,15 +265,10 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
-// Reference existing subscription-level system topic (common in production environments)
-resource existingEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' existing = if (useExistingSystemTopic) {
-  name: existingSystemTopicName
-  scope: resourceGroup(existingSystemTopicResourceGroup)
-}
-
-// Create new system topic only if not using existing one
-resource newEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = if (!useExistingSystemTopic) {
-  name: '${namePrefix}-aci-topic'
+// Event Grid system topic for subscription-level events
+// System topics are idempotent - creating with same name won't error
+resource eventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
+  name: 'qscan-aci-topic'
   location: 'global'
   properties: {
     source: subscription().id
@@ -290,12 +276,10 @@ resource newEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview'
   }
 }
 
-// Use whichever topic is appropriate
-var eventGridTopicName = useExistingSystemTopic ? existingEventGridTopic.name : newEventGridTopic.name
-
 // Event Grid subscriptions (enabled after function code deployment)
 resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = if (enableEventGrid) {
-  name: '${eventGridTopicName}/qualys-aci-container-deployments'
+  name: 'qualys-aci-container-deployments'
+  parent: eventGridTopic
   properties: {
     destination: {
       endpointType: 'AzureFunction'
@@ -319,7 +303,8 @@ resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
 }
 
 resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = if (enableEventGrid) {
-  name: '${eventGridTopicName}/qualys-aca-container-deployments'
+  name: 'qualys-aca-container-deployments'
+  parent: eventGridTopic
   properties: {
     destination: {
       endpointType: 'AzureFunction'
@@ -348,4 +333,4 @@ output storageAccountName string = storageAccount.name
 output keyVaultName string = keyVault.name
 output appInsightsName string = appInsights.name
 output functionAppPrincipalId string = functionApp.identity.principalId
-output eventGridTopicName string = eventGridTopicName
+output eventGridTopicName string = eventGridTopic.name
