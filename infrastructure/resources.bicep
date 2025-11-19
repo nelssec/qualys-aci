@@ -291,9 +291,16 @@ resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
       advancedFilters: [
         {
           operatorType: 'StringContains'
-          key: 'subject'
+          key: 'data.resourceProvider'
           values: [
-            '/Microsoft.ContainerInstance/containerGroups/'
+            'Microsoft.ContainerInstance'
+          ]
+        }
+        {
+          operatorType: 'StringContains'
+          key: 'data.operationName'
+          values: [
+            'Microsoft.ContainerInstance/containerGroups/write'
           ]
         }
       ]
@@ -325,9 +332,16 @@ resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
       advancedFilters: [
         {
           operatorType: 'StringContains'
-          key: 'subject'
+          key: 'data.resourceProvider'
           values: [
-            '/Microsoft.App/containerApps/'
+            'Microsoft.App'
+          ]
+        }
+        {
+          operatorType: 'StringContains'
+          key: 'data.operationName'
+          values: [
+            'Microsoft.App/containerApps/write'
           ]
         }
       ]
