@@ -56,6 +56,4 @@ output keyVaultName string = resources.outputs.keyVaultName
 output appInsightsName string = resources.outputs.appInsightsName
 output functionAppPrincipalId string = resources.outputs.functionAppPrincipalId
 output eventGridTopicName string = resources.outputs.eventGridTopicName
-output containerRegistryName string = resources.outputs.containerRegistryName
-output containerRegistryLoginServer string = resources.outputs.containerRegistryLoginServer
 output resourceGroupName string = rg.name

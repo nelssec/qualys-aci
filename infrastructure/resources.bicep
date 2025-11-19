@@ -67,7 +67,6 @@ var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
 var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
-var acrName = 'qscanacr${uniqueString(resourceGroup().id)}'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
@@ -124,18 +123,6 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
     RetentionInDays: 90
     publicNetworkAccessForIngestion: 'Enabled'
     publicNetworkAccessForQuery: 'Enabled'
-  }
-}
-
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: acrName
-  location: location
-  sku: {
-    name: 'Basic'
-  }
-  properties: {
-    adminUserEnabled: false
-    publicNetworkAccess: 'Enabled'
   }
 }
 
@@ -237,10 +224,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: location
         }
         {
-          name: 'QSCANNER_IMAGE'
-          value: '${acrName}.azurecr.io/qualys/qscanner:latest'
-        }
-        {
           name: 'STORAGE_CONNECTION_STRING'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
@@ -286,16 +269,6 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, functionApp.id, 'AcrPull')
-  scope: containerRegistry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
@@ -376,5 +349,3 @@ output keyVaultName string = keyVault.name
 output appInsightsName string = appInsights.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 output eventGridTopicName string = eventGridTopicName
-output containerRegistryName string = containerRegistry.name
-output containerRegistryLoginServer string = containerRegistry.properties.loginServer

@@ -9,7 +9,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-from qualys_scanner_aci import QScannerACI
+from qualys_scanner_binary import QScannerBinary
 from image_parser import ImageParser
 from storage_handler import StorageHandler
 
@@ -71,7 +71,7 @@ def main(event: func.EventGridEvent):
 
         logging.info(f'Found {len(images)} container images to scan')
 
-        scanner = QScannerACI(subscription_id=event_subscription_id)
+        scanner = QScannerBinary(subscription_id=event_subscription_id)
         storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
 
         results = []
