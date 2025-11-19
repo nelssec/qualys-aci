@@ -318,7 +318,6 @@ resource newEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview'
 }
 
 // Use whichever topic is appropriate
-var eventGridTopicId = useExistingSystemTopic ? existingEventGridTopic.id : newEventGridTopic.id
 var eventGridTopicName = useExistingSystemTopic ? existingEventGridTopic.name : newEventGridTopic.name
 
 // Event Grid subscriptions (enabled after function code deployment)
@@ -376,6 +375,6 @@ output storageAccountName string = storageAccount.name
 output keyVaultName string = keyVault.name
 output appInsightsName string = appInsights.name
 output functionAppPrincipalId string = functionApp.identity.principalId
-output eventGridTopicName string = aciEventGridTopic.name
+output eventGridTopicName string = eventGridTopicName
 output containerRegistryName string = containerRegistry.name
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
