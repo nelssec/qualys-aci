@@ -37,48 +37,31 @@ Container Deployment → Event Grid → Azure Function → ACI (qscanner) → Sc
 
 ## Quick Start
 
-### 1. Check for Existing Event Grid System Topic
-
-Most production environments already have a subscription-level Event Grid system topic:
+**Option 1: Automated Deployment (Recommended for Development/Testing)**
 
 ```bash
-az eventgrid system-topic list --query "[?properties.topicType=='Microsoft.Resources.Subscriptions'].{Name:name,RG:resourceGroup}" -o table
+export QUALYS_ACCESS_TOKEN="your-qualys-token"
+export QUALYS_POD="US2"
+./deploy.sh
 ```
 
-If one exists, note the Name and ResourceGroup.
+Runs all 3 steps automatically with error checking and timeout handling.
 
-### 2. Deploy Infrastructure
+**Option 2: Manual Bicep Deployment (Production/Enterprise)**
 
-**If you have an existing system topic (common in production):**
+Use this for production deployments, CI/CD pipelines, or environments with existing Event Grid infrastructure.
 
-```bash
-az deployment sub create \
-  --location eastus \
-  --template-file infrastructure/main.bicep \
-  --parameters qualysPod=US2 \
-  --parameters qualysAccessToken="your-qualys-token" \
-  --parameters existingSystemTopicName="<topic-name-from-step-1>" \
-  --parameters existingSystemTopicResourceGroup="<rg-from-step-1>"
-```
-
-**If no existing system topic:**
+### Step 1: Deploy Infrastructure
 
 ```bash
 az deployment sub create \
   --location eastus \
   --template-file infrastructure/main.bicep \
   --parameters qualysPod=US2 \
-  --parameters qualysAccessToken="your-qualys-token" \
-  --parameters useExistingSystemTopic=false
+  --parameters qualysAccessToken="your-qualys-token"
 ```
 
-This creates:
-- Resource group
-- Function App with subscription-level permissions
-- Storage Account, Key Vault, ACR
-- Event Grid subscriptions (uses existing or creates new system topic)
-
-### 3. Deploy Function Code
+### Step 2: Deploy Function Code
 
 ```bash
 FUNCTION_APP=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
@@ -87,9 +70,28 @@ func azure functionapp publish $FUNCTION_APP --python --build remote
 cd ..
 ```
 
-Event Grid subscriptions activate automatically once function code is deployed.
+### Step 3: Enable Event Grid
 
-### 4. Test Scanning
+```bash
+az deployment sub create \
+  --location eastus \
+  --template-file infrastructure/main.bicep \
+  --parameters qualysPod=US2 \
+  --parameters qualysAccessToken="your-qualys-token" \
+  --parameters enableEventGrid=true
+```
+
+**For environments with existing Event Grid system topic:**
+```bash
+# Check for existing topic
+az eventgrid system-topic list --query "[?properties.topicType=='Microsoft.Resources.Subscriptions'].{Name:name,RG:resourceGroup}" -o table
+
+# Add to step 3:
+--parameters existingSystemTopicName="<topic-name>" \
+--parameters existingSystemTopicResourceGroup="<topic-rg>"
+```
+
+## Test Scanning
 
 Deploy a test container to trigger automatic scanning:
 
