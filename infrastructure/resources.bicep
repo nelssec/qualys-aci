@@ -1,10 +1,5 @@
 param location string = resourceGroup().location
 
-@minLength(3)
-@maxLength(10)
-@description('Prefix for resource names.')
-param namePrefix string = 'qscan'
-
 @description('Qualys POD identifier (e.g., US2, US3, EU1)')
 param qualysPod string
 

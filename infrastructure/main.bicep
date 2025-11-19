@@ -10,10 +10,7 @@ param notifySeverityThreshold string = 'HIGH'
 param scanCacheHours int = 24
 param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
-param namePrefix string = 'qscan'
 param enableEventGrid bool = false
-param existingSystemTopicName string = ''
-param existingSystemTopicResourceGroup string = 'Default-EventGrid'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
@@ -25,7 +22,6 @@ module resources 'resources.bicep' = {
   name: 'qualys-scanner-resources'
   params: {
     location: location
-    namePrefix: namePrefix
     qualysPod: qualysPod
     qualysAccessToken: qualysAccessToken
     notificationEmail: notificationEmail
@@ -34,9 +30,6 @@ module resources 'resources.bicep' = {
     functionAppSku: functionAppSku
     functionPackageUrl: functionPackageUrl
     enableEventGrid: enableEventGrid
-    useExistingSystemTopic: !empty(existingSystemTopicName)
-    existingSystemTopicName: existingSystemTopicName
-    existingSystemTopicResourceGroup: existingSystemTopicResourceGroup
   }
 }
 
