@@ -1,11 +1,13 @@
 """
 Qualys qscanner integration using local binary
 Runs qscanner binary directly in the function runtime
+Auto-downloads latest qscanner binary on first use
 """
 import os
 import json
 import logging
 import subprocess
+import urllib.request
 from typing import Dict, Optional
 from datetime import datetime
 from pathlib import Path
@@ -32,33 +34,65 @@ class QScannerBinary:
         self.qualys_access_token = os.environ.get('QUALYS_ACCESS_TOKEN')
         self.scan_timeout = int(os.environ.get('SCAN_TIMEOUT', '1800'))
 
-        # Find qscanner binary
+        # Find or download qscanner binary
         self.qscanner_path = self._find_qscanner_binary()
-
-        if not self.qscanner_path:
-            raise FileNotFoundError('qscanner binary not found. Run download_qscanner.sh first.')
-
         logging.info(f'Using qscanner binary at: {self.qscanner_path}')
 
     def _find_qscanner_binary(self) -> Optional[str]:
         """
-        Find qscanner binary in common locations
+        Find or download qscanner binary
 
         Returns:
-            Path to qscanner binary or None
+            Path to qscanner binary
         """
-        # Check common locations
-        possible_paths = [
-            '/home/site/wwwroot/bin/qscanner',  # Azure Functions deployment path
-            './bin/qscanner',  # Local development
-            str(Path(__file__).parent / 'bin' / 'qscanner'),  # Relative to this file
-        ]
+        # Persistent storage path (survives across function executions)
+        persistent_path = '/home/qscanner'
 
-        for path in possible_paths:
-            if os.path.isfile(path) and os.access(path, os.X_OK):
-                return path
+        # Check if binary already exists
+        if os.path.isfile(persistent_path) and os.access(persistent_path, os.X_OK):
+            logging.info(f'Using existing qscanner binary at {persistent_path}')
+            return persistent_path
 
-        return None
+        # Download binary
+        logging.info('qscanner binary not found, downloading latest version...')
+        return self._download_qscanner_binary(persistent_path)
+
+    def _download_qscanner_binary(self, target_path: str) -> str:
+        """
+        Download qscanner binary from Qualys CDN
+
+        Args:
+            target_path: Where to save the binary
+
+        Returns:
+            Path to downloaded binary
+        """
+        version = os.environ.get('QSCANNER_VERSION', '4.6.0')
+        download_url = f'https://cdn.qualys.com/qscanner/{version}/qscanner_{version}_linux_amd64'
+
+        try:
+            logging.info(f'Downloading qscanner v{version} from {download_url}')
+
+            # Create parent directory if needed
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+            # Download binary
+            urllib.request.urlretrieve(download_url, target_path)
+
+            # Make executable
+            os.chmod(target_path, 0o755)
+
+            # Verify
+            if os.path.isfile(target_path) and os.access(target_path, os.X_OK):
+                size = os.path.getsize(target_path)
+                logging.info(f'Successfully downloaded qscanner binary ({size} bytes)')
+                return target_path
+            else:
+                raise Exception('Downloaded binary is not executable')
+
+        except Exception as e:
+            logging.error(f'Failed to download qscanner binary: {str(e)}')
+            raise Exception(f'Cannot download qscanner binary: {str(e)}. Please check QSCANNER_VERSION env var and network connectivity.')
 
     def scan_image(self, registry: str, repository: str, tag: str = 'latest',
                    digest: Optional[str] = None, custom_tags: Optional[Dict] = None) -> Dict:

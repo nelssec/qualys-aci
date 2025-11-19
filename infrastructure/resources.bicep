@@ -63,9 +63,9 @@ param existingSystemTopicResourceGroup string = 'Default-EventGrid'
 // Key Vault: 3-24 chars, alphanumeric and hyphens (qskv=4 + uniqueString=13 = 17 chars)
 // uniqueString always generates exactly 13 characters
 var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
-var functionAppName = '${namePrefix}-func-${uniqueString(resourceGroup().id)}'
-var appServicePlanName = '${namePrefix}-plan-${uniqueString(resourceGroup().id)}'
-var appInsightsName = '${namePrefix}-insights-${uniqueString(resourceGroup().id)}'
+var functionAppName = 'qscan-${uniqueString(resourceGroup().id)}'
+var appServicePlanName = 'qscan-plan-${uniqueString(resourceGroup().id)}'
+var appInsightsName = 'qscan-insights-${uniqueString(resourceGroup().id)}'
 var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {

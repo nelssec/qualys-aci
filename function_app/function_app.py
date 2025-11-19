@@ -3,39 +3,29 @@ import json
 import logging
 import azure.functions as func
 from datetime import datetime
-import sys
-from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
+# Import helper modules
 from qualys_scanner_binary import QScannerBinary
 from image_parser import ImageParser
 from storage_handler import StorageHandler
 
+app = func.FunctionApp()
 
-def main(event: func.EventGridEvent):
+
+@app.function_name(name="EventProcessor")
+@app.event_grid_trigger(arg_name="event")
+def event_processor(event: func.EventGridEvent):
+    """Process Event Grid events for container deployments"""
     try:
         event_data = event.get_json()
         event_type = event.event_type
         subject = event.subject
 
-        # Log ALL events for debugging
         logging.info(f'=== EVENT GRID EVENT RECEIVED ===')
         logging.info(f'Event Type: {event_type}')
         logging.info(f'Subject: {subject}')
-        logging.info(f'Event Data Keys: {list(event_data.keys())}')
-        logging.info(f'Full Event: {json.dumps(event_data, indent=2)}')
 
         # Filter for container events
-        resource_provider = event_data.get('resourceProvider', '')
-        operation_name = event_data.get('operationName', '')
-        resource_uri = event_data.get('resourceUri', '')
-
-        logging.info(f'Resource Provider: {resource_provider}')
-        logging.info(f'Operation Name: {operation_name}')
-        logging.info(f'Resource URI: {resource_uri}')
-
         if 'Microsoft.ContainerInstance/containerGroups' in subject:
             container_type = 'ACI'
         elif 'Microsoft.App/containerApps' in subject:
@@ -47,10 +37,6 @@ def main(event: func.EventGridEvent):
         logging.info(f'Processing {container_type} container event')
 
         event_subscription_id = event_data.get('subscriptionId')
-        if event_subscription_id:
-            logging.info(f'Event from subscription: {event_subscription_id}')
-
-        # Extract resource group and container name
         resource_group = extract_resource_group(subject)
         container_name = subject.split('/')[-1]
 
@@ -88,7 +74,7 @@ def main(event: func.EventGridEvent):
                 custom_tags = {
                     'container_type': container_type,
                     'azure_subscription': event_data.get('subscriptionId', 'unknown'),
-                    'resource_group': extract_resource_group(subject),
+                    'resource_group': resource_group,
                     'event_id': event.id
                 }
 
