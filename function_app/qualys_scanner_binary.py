@@ -51,6 +51,19 @@ class QScannerBinary:
             logging.info(f'Using bundled qscanner binary at {bundled_path}')
             return bundled_path
 
+        # Check for bundled tar.gz (for new deployments)
+        version = os.environ.get('QSCANNER_VERSION', '4.6.0-4')
+        bundled_targz = os.path.join(os.path.dirname(__file__), f'qscanner-{version}.linux-amd64.tar.gz')
+        if os.path.isfile(bundled_targz):
+            logging.info(f'Found bundled qscanner tar.gz at {bundled_targz}, extracting...')
+            try:
+                extracted_path = self._extract_bundled_targz(bundled_targz, bundled_path)
+                if os.path.isfile(extracted_path) and os.access(extracted_path, os.X_OK):
+                    logging.info(f'Successfully extracted bundled qscanner to {extracted_path}')
+                    return extracted_path
+            except Exception as e:
+                logging.warning(f'Failed to extract bundled tar.gz: {str(e)}, will try other options')
+
         # Persistent storage path (survives across function executions)
         persistent_path = '/home/qscanner'
 
@@ -122,6 +135,50 @@ class QScannerBinary:
         except Exception as e:
             logging.error(f'Failed to download qscanner binary: {str(e)}')
             raise Exception(f'Cannot download qscanner binary: {str(e)}. Please check QSCANNER_VERSION env var and network connectivity.')
+
+    def _extract_bundled_targz(self, targz_path: str, target_path: str) -> str:
+        """
+        Extract bundled qscanner tar.gz to target location
+
+        Args:
+            targz_path: Path to bundled tar.gz file
+            target_path: Where to extract the binary
+
+        Returns:
+            Path to extracted binary
+        """
+        import tarfile
+        import tempfile
+        import shutil
+
+        try:
+            # Create temp directory for extraction
+            temp_dir = tempfile.mkdtemp()
+
+            logging.info(f'Extracting {targz_path} to temp directory')
+            with tarfile.open(targz_path, 'r:gz') as tar:
+                tar.extractall(temp_dir)
+
+            # Find the binary in the extracted files
+            binary_source = os.path.join(temp_dir, 'qscanner')
+            if not os.path.isfile(binary_source):
+                raise Exception(f'Binary not found in archive at {binary_source}')
+
+            # Move to target location
+            shutil.move(binary_source, target_path)
+
+            # Make executable
+            os.chmod(target_path, 0o755)
+
+            # Clean up temp directory
+            shutil.rmtree(temp_dir)
+
+            logging.info(f'Extracted qscanner binary to {target_path}')
+            return target_path
+
+        except Exception as e:
+            logging.error(f'Failed to extract bundled tar.gz: {str(e)}')
+            raise
 
     def scan_image(self, registry: str, repository: str, tag: str = 'latest',
                    digest: Optional[str] = None, custom_tags: Optional[Dict] = None) -> Dict:
