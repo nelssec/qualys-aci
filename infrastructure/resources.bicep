@@ -201,14 +201,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
         {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: toLower(functionAppName)
-        }
-        {
           name: 'FUNCTIONS_EXTENSION_VERSION'
           value: '~4'
         }
@@ -267,6 +259,14 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'SCAN_TIMEOUT'
           value: '1800'
+        }
+        {
+          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'true'
+        }
+        {
+          name: 'ENABLE_ORYX_BUILD'
+          value: 'true'
         }
       ], !empty(functionPackageUrl) ? [
         {
