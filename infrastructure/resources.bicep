@@ -288,6 +288,15 @@ resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
       includedEventTypes: [
         'Microsoft.Resources.ResourceWriteSuccess'
       ]
+      advancedFilters: [
+        {
+          operatorType: 'StringContains'
+          key: 'subject'
+          values: [
+            '/Microsoft.ContainerInstance/containerGroups/'
+          ]
+        }
+      ]
     }
     eventDeliverySchema: 'EventGridSchema'
     retryPolicy: {
@@ -312,6 +321,15 @@ resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptio
     filter: {
       includedEventTypes: [
         'Microsoft.Resources.ResourceWriteSuccess'
+      ]
+      advancedFilters: [
+        {
+          operatorType: 'StringContains'
+          key: 'subject'
+          values: [
+            '/Microsoft.App/containerApps/'
+          ]
+        }
       ]
     }
     eventDeliverySchema: 'EventGridSchema'
