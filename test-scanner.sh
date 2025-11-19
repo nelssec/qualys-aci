@@ -51,6 +51,8 @@ for i in "${!IMAGES[@]}"; do
     --name "$CONTAINER_NAME" \
     --image "$IMAGE" \
     --os-type Linux \
+    --cpu 1 \
+    --memory 1.5 \
     --restart-policy Never \
     --location eastus \
     --output none 2>&1 | grep -v "Running\.\.\." || true
