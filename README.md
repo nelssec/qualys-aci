@@ -225,6 +225,19 @@ az eventgrid system-topic event-subscription list \
 
 Expected: 2 subscriptions with `Succeeded` state.
 
+If Event Grid subscriptions were created before advanced filters were added, update them:
+```bash
+export QUALYS_ACCESS_TOKEN="<your-token>"
+./update-eventgrid.sh
+```
+
+This ensures Event Grid only triggers on container deployments, not all resource events.
+
+Run the diagnostic script to check configuration:
+```bash
+./debug-deployment.sh
+```
+
 ### qscanner Binary Download Failures
 
 Check function logs:
@@ -334,10 +347,10 @@ Monthly cost estimate (moderate usage, ~100 scans/month):
 - **Topic Type**: `Microsoft.Resources.Subscriptions`
 - **Event Types**:
   - `Microsoft.Resources.ResourceWriteSuccess`
-  - `Microsoft.Resources.ResourceDeleteSuccess`
-- **Filters**:
-  - `Microsoft.ContainerInstance/containerGroups`
-  - `Microsoft.App/containerApps`
+- **Advanced Filters** (subject contains):
+  - ACI: `/Microsoft.ContainerInstance/containerGroups/`
+  - ACA: `/Microsoft.App/containerApps/`
+- **Separate Subscriptions**: One for ACI, one for ACA
 
 ### qscanner Binary
 - **Source**: `https://cdn.qualys.com/qscanner/<version>/qscanner_<version>_linux_amd64`
