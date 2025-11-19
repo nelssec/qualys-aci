@@ -57,7 +57,7 @@ for i in "${!IMAGES[@]}"; do
     --location eastus \
     --output none 2>&1 | grep -v "Running\.\.\." || true
 
-  echo "  ✓ Deployed"
+  echo "  [OK] Deployed"
   echo ""
 done
 

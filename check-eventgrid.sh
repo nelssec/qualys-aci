@@ -13,10 +13,10 @@ echo ""
 echo "[1/3] Checking Event Grid System Topic..."
 TOPIC_NAME=$(az eventgrid system-topic list --resource-group "$RG" --query "[0].name" -o tsv 2>/dev/null || echo "")
 if [ -z "$TOPIC_NAME" ]; then
-  echo "  ❌ No Event Grid system topic found"
-  echo "     Event Grid was never deployed"
+  echo "  [ERROR] No Event Grid system topic found"
+  echo "          Event Grid was never deployed"
 else
-  echo "  ✓ System Topic: $TOPIC_NAME"
+  echo "  [OK] System Topic: $TOPIC_NAME"
 fi
 
 echo ""
@@ -36,15 +36,15 @@ if [ -n "$TOPIC_NAME" ]; then
     --query "name" -o tsv 2>/dev/null || echo "")
 
   if [ -n "$ACI_SUB" ]; then
-    echo "  ✓ ACI subscription: $ACI_SUB"
+    echo "  [OK] ACI subscription: $ACI_SUB"
   else
-    echo "  ❌ ACI subscription not found (qualys-aci-container-deployments)"
+    echo "  [ERROR] ACI subscription not found (qualys-aci-container-deployments)"
   fi
 
   if [ -n "$ACA_SUB" ]; then
-    echo "  ✓ ACA subscription: $ACA_SUB"
+    echo "  [OK] ACA subscription: $ACA_SUB"
   else
-    echo "  ❌ ACA subscription not found (qualys-aca-container-deployments)"
+    echo "  [ERROR] ACA subscription not found (qualys-aca-container-deployments)"
   fi
 
   # Show all subscriptions for reference
@@ -55,7 +55,7 @@ if [ -n "$TOPIC_NAME" ]; then
     --system-topic-name "$TOPIC_NAME" \
     --query "[].{Name:name,State:provisioningState,Endpoint:destination.endpointType}" -o table 2>/dev/null || echo "    None"
 else
-  echo "  ⚠ Skipped (no system topic)"
+  echo "  [WARN] Skipped (no system topic)"
   ACI_SUB=""
   ACA_SUB=""
 fi
@@ -64,21 +64,21 @@ echo ""
 echo "[3/3] Checking Function App..."
 FUNC_NAME=$(az functionapp list --resource-group "$RG" --query "[0].name" -o tsv 2>/dev/null || echo "")
 if [ -n "$FUNC_NAME" ]; then
-  echo "  ✓ Function App: $FUNC_NAME"
+  echo "  [OK] Function App: $FUNC_NAME"
 
   # Check if functions are deployed
   FUNCS=$(az functionapp function list --resource-group "$RG" --name "$FUNC_NAME" --query "[].name" -o tsv 2>/dev/null || echo "")
   if [ -n "$FUNCS" ]; then
-    echo "  ✓ Deployed Functions:"
+    echo "  [OK] Deployed Functions:"
     for func in $FUNCS; do
-      echo "    - $func"
+      echo "       - $func"
     done
   else
-    echo "  ⚠ No functions found in function app"
-    echo "    Run: cd function_app && func azure functionapp publish $FUNC_NAME --python --build remote"
+    echo "  [WARN] No functions found in function app"
+    echo "         Run: cd function_app && func azure functionapp publish $FUNC_NAME --python --build remote"
   fi
 else
-  echo "  ❌ No function app found"
+  echo "  [ERROR] No function app found"
 fi
 
 echo ""
@@ -88,7 +88,7 @@ echo "========================================="
 
 if [ -z "$ACI_SUB" ] && [ -z "$ACA_SUB" ]; then
   echo ""
-  echo "❌ CONTAINER SCANNER EVENT GRID SUBSCRIPTIONS ARE MISSING"
+  echo "[ERROR] CONTAINER SCANNER EVENT GRID SUBSCRIPTIONS ARE MISSING"
   echo ""
   echo "This is why your function is not being triggered!"
   echo "The system topic exists, but the container monitoring subscriptions don't."
@@ -100,7 +100,7 @@ if [ -z "$ACI_SUB" ] && [ -z "$ACA_SUB" ]; then
   echo ""
 else
   echo ""
-  echo "✓ Event Grid container scanner subscriptions are configured"
+  echo "[OK] Event Grid container scanner subscriptions are configured"
   echo ""
   echo "If scans still aren't triggering, check:"
   echo "  1. Function logs: func azure functionapp logstream $FUNC_NAME"
