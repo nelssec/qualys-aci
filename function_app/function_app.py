@@ -5,7 +5,7 @@ import azure.functions as func
 from datetime import datetime
 
 # Import helper modules
-from qualys_scanner_binary import QScannerBinary
+from qualys_scanner_aci import QScannerACI
 from image_parser import ImageParser
 from storage_handler import StorageHandler
 
@@ -178,7 +178,7 @@ def process_activity_log_record(record: dict):
                 logging.info(f'  Image {idx + 1}: {img}')
 
             # Initialize scanner and storage
-            scanner = QScannerBinary(subscription_id=subscription_id)
+            scanner = QScannerACI()
             storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
 
             # Scan each image
@@ -194,24 +194,17 @@ def process_activity_log_record(record: dict):
                         logging.info(f'  CACHED: Image recently scanned')
                         continue
 
-                    custom_tags = {
-                        'container_type': container_type,
-                        'azure_subscription': subscription_id,
-                        'resource_group': resource_group,
-                        'source': 'activity-log'
-                    }
-
                     scan_result = scanner.scan_image(
                         registry=image_info['registry'],
                         repository=image_info['repository'],
                         tag=image_info['tag'],
                         digest=image_info.get('digest'),
-                        custom_tags=custom_tags
+                        resource_id=resource_id
                     )
 
-                    logging.info(f'  SCAN COMPLETED: status={scan_result.get("status")}')
-                    vuln_summary = scan_result.get('vulnerabilities', {})
-                    logging.info(f'  Vulnerabilities: Critical={vuln_summary.get("CRITICAL", 0)}, High={vuln_summary.get("HIGH", 0)}')
+                    logging.info(f'  SCAN SUBMITTED: scan_id={scan_result.get("scan_id")}')
+                    logging.info(f'  ACI Container: {scan_result.get("container_group")}')
+                    logging.info(f'  Provisioning State: {scan_result.get("provisioning_state")}')
 
                     result_record = {
                         'timestamp': datetime.utcnow().isoformat(),
@@ -220,17 +213,13 @@ def process_activity_log_record(record: dict):
                         'resource_id': resource_id,
                         'scan_id': scan_result.get('scan_id'),
                         'status': scan_result.get('status'),
-                        'vulnerabilities': scan_result.get('vulnerabilities', {}),
-                        'compliance': scan_result.get('compliance', {})
+                        'aci_container': scan_result.get('container_group'),
+                        'provisioning_state': scan_result.get('provisioning_state')
                     }
 
                     storage.save_scan_result(result_record)
                     results.append(result_record)
-                    logging.info(f'  SAVED: Scan result saved successfully')
-
-                    if should_alert(result_record):
-                        logging.info(f'  ALERT: High severity findings detected')
-                        send_alert(result_record)
+                    logging.info(f'  SAVED: Scan submission recorded')
 
                 except Exception as img_error:
                     logging.error(f'SCAN ERROR: Failed to process image {image}')
