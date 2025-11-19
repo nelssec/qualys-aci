@@ -78,16 +78,7 @@ az deployment sub create \
   --parameters enableEventGrid=true
 ```
 
-**For environments with existing Event Grid system topic:**
-```bash
-# List existing topics
-az eventgrid system-topic list \
-  --query "[?properties.topicType=='Microsoft.Resources.Subscriptions'].{Name:name,RG:resourceGroup}" -o table
-
-# Use existing topic
---parameters existingSystemTopicName="<topic-name>" \
---parameters existingSystemTopicResourceGroup="<resource-group>"
-```
+Event Grid system topic is automatically created if it doesn't exist. Deployments are idempotent.
 
 ## Testing
 
