@@ -41,9 +41,6 @@ param functionAppSku string = 'Y1'
 @description('URL to function app deployment package (zip file). Leave empty to skip automatic deployment.')
 param functionPackageUrl string = ''
 
-@description('Enable Event Grid subscriptions. Set to true after function code is deployed.')
-param enableEventGrid bool = false
-
 // Resource naming with Azure constraints
 // Storage: 3-24 chars, alphanumeric only (qscan=5 + uniqueString=13 = 18 chars)
 // Key Vault: 3-24 chars, alphanumeric and hyphens (qskv=4 + uniqueString=13 = 17 chars)
@@ -260,104 +257,10 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
-// Event Grid system topic for subscription-level events
-// System topics are idempotent - creating with same name won't error
-resource eventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
-  name: 'qscan-aci-topic'
-  location: 'global'
-  properties: {
-    source: subscription().id
-    topicType: 'Microsoft.Resources.Subscriptions'
-  }
-}
-
-// Event Grid subscriptions (enabled after function code deployment)
-resource aciEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = if (enableEventGrid) {
-  name: 'qualys-aci-container-deployments'
-  parent: eventGridTopic
-  properties: {
-    destination: {
-      endpointType: 'AzureFunction'
-      properties: {
-        resourceId: '${functionApp.id}/functions/EventProcessor'
-        maxEventsPerBatch: 1
-        preferredBatchSizeInKilobytes: 64
-      }
-    }
-    filter: {
-      includedEventTypes: [
-        'Microsoft.Resources.ResourceWriteSuccess'
-      ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.ContainerInstance'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.ContainerInstance/containerGroups/write'
-          ]
-        }
-      ]
-    }
-    eventDeliverySchema: 'EventGridSchema'
-    retryPolicy: {
-      maxDeliveryAttempts: 30
-      eventTimeToLiveInMinutes: 1440
-    }
-  }
-}
-
-resource acaEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2023-12-15-preview' = if (enableEventGrid) {
-  name: 'qualys-aca-container-deployments'
-  parent: eventGridTopic
-  properties: {
-    destination: {
-      endpointType: 'AzureFunction'
-      properties: {
-        resourceId: '${functionApp.id}/functions/EventProcessor'
-        maxEventsPerBatch: 1
-        preferredBatchSizeInKilobytes: 64
-      }
-    }
-    filter: {
-      includedEventTypes: [
-        'Microsoft.Resources.ResourceWriteSuccess'
-      ]
-      advancedFilters: [
-        {
-          operatorType: 'StringContains'
-          key: 'data.resourceProvider'
-          values: [
-            'Microsoft.App'
-          ]
-        }
-        {
-          operatorType: 'StringContains'
-          key: 'data.operationName'
-          values: [
-            'Microsoft.App/containerApps/write'
-          ]
-        }
-      ]
-    }
-    eventDeliverySchema: 'EventGridSchema'
-    retryPolicy: {
-      maxDeliveryAttempts: 30
-      eventTimeToLiveInMinutes: 1440
-    }
-  }
-}
-
 output functionAppName string = functionApp.name
 output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
 output storageAccountName string = storageAccount.name
 output keyVaultName string = keyVault.name
 output appInsightsName string = appInsights.name
 output functionAppPrincipalId string = functionApp.identity.principalId
-output eventGridTopicName string = eventGridTopic.name
+output functionAppId string = functionApp.id
