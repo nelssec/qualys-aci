@@ -12,6 +12,8 @@ from azure.mgmt.containerinstance.models import (
     Container,
     ContainerGroup,
     ContainerGroupRestartPolicy,
+    ContainerGroupIdentity,
+    ResourceIdentityType,
     OperatingSystemTypes,
     ResourceRequirements,
     ResourceRequests,
@@ -43,9 +45,15 @@ class QScannerACI:
         self.qualys_pod = os.environ.get('QUALYS_POD')
         self.qualys_access_token = os.environ.get('QUALYS_ACCESS_TOKEN')
 
-        # Use docker:dind image with qscanner installed
-        # We'll download qscanner binary at runtime
-        self.qscanner_image = os.environ.get('QSCANNER_IMAGE', 'docker:24.0-dind')
+        # Use docker:dind image from Azure Container Registry (ACR)
+        # to avoid Docker Hub rate limiting. We'll download qscanner binary at runtime.
+        # ACR authentication happens automatically via Azure - no credentials needed!
+        acr_server = os.environ.get('ACR_SERVER')
+        if acr_server:
+            self.qscanner_image = os.environ.get('QSCANNER_IMAGE', f'{acr_server}/docker:24.0-dind')
+        else:
+            # Fallback to Docker Hub (not recommended due to rate limiting)
+            self.qscanner_image = os.environ.get('QSCANNER_IMAGE', 'docker:24.0-dind')
 
         # Azure client
         self.credential = DefaultAzureCredential()
@@ -196,12 +204,35 @@ kill $DOCKER_PID 2>/dev/null || true
             environment_variables=[]
         )
 
-        # Container group configuration
+        # User-assigned managed identity for ACR authentication
+        # This identity has AcrPull role on the ACR and is used to pull docker:dind image
+        identity_resource_id = f'/subscriptions/{self.subscription_id}/resourcegroups/{self.resource_group}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/qscan-aci-identity'
+
+        identity = ContainerGroupIdentity(
+            type=ResourceIdentityType.user_assigned,
+            user_assigned_identities={
+                identity_resource_id: {}
+            }
+        )
+
+        # ImageRegistryCredential using managed identity for ACR authentication
+        # The identity parameter tells ACI to use this managed identity to pull from ACR
+        acr_server = os.environ.get('ACR_SERVER', 'qscanacralo13zi.azurecr.io')
+        registry_credentials = [
+            ImageRegistryCredential(
+                server=acr_server,
+                identity=identity_resource_id
+            )
+        ]
+
+        # Container group configuration with managed identity for ACR authentication
         container_group = ContainerGroup(
             location=self.location,
             containers=[container],
             os_type=OperatingSystemTypes.linux,
             restart_policy=ContainerGroupRestartPolicy.never,  # Run once and exit
+            identity=identity,  # Assign managed identity to container group
+            image_registry_credentials=registry_credentials,  # Use managed identity for ACR auth
             tags={
                 'purpose': 'qualys-scan',
                 'image': image_to_scan,
