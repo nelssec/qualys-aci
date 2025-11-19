@@ -22,19 +22,42 @@ fi
 echo ""
 echo "[2/3] Checking Event Grid Subscriptions..."
 if [ -n "$TOPIC_NAME" ]; then
-  SUBS=$(az eventgrid system-topic event-subscription list \
+  # Check for our specific subscriptions
+  ACI_SUB=$(az eventgrid system-topic event-subscription show \
     --resource-group "$RG" \
     --system-topic-name "$TOPIC_NAME" \
-    --query "[].{Name:name,State:provisioningState,Endpoint:destination.endpointType}" -o table 2>/dev/null || echo "")
+    --name "qualys-aci-container-deployments" \
+    --query "name" -o tsv 2>/dev/null || echo "")
 
-  if [ -z "$SUBS" ]; then
-    echo "  ❌ No Event Grid subscriptions found"
-    echo "     Event Grid subscriptions were never enabled"
+  ACA_SUB=$(az eventgrid system-topic event-subscription show \
+    --resource-group "$RG" \
+    --system-topic-name "$TOPIC_NAME" \
+    --name "qualys-aca-container-deployments" \
+    --query "name" -o tsv 2>/dev/null || echo "")
+
+  if [ -n "$ACI_SUB" ]; then
+    echo "  ✓ ACI subscription: $ACI_SUB"
   else
-    echo "$SUBS"
+    echo "  ❌ ACI subscription not found (qualys-aci-container-deployments)"
   fi
+
+  if [ -n "$ACA_SUB" ]; then
+    echo "  ✓ ACA subscription: $ACA_SUB"
+  else
+    echo "  ❌ ACA subscription not found (qualys-aca-container-deployments)"
+  fi
+
+  # Show all subscriptions for reference
+  echo ""
+  echo "  All Event Grid subscriptions:"
+  az eventgrid system-topic event-subscription list \
+    --resource-group "$RG" \
+    --system-topic-name "$TOPIC_NAME" \
+    --query "[].{Name:name,State:provisioningState,Endpoint:destination.endpointType}" -o table 2>/dev/null || echo "    None"
 else
   echo "  ⚠ Skipped (no system topic)"
+  ACI_SUB=""
+  ACA_SUB=""
 fi
 
 echo ""
@@ -63,11 +86,12 @@ echo "========================================="
 echo "Summary"
 echo "========================================="
 
-if [ -z "$TOPIC_NAME" ] || [ -z "$SUBS" ]; then
+if [ -z "$ACI_SUB" ] && [ -z "$ACA_SUB" ]; then
   echo ""
-  echo "❌ EVENT GRID IS NOT CONFIGURED"
+  echo "❌ CONTAINER SCANNER EVENT GRID SUBSCRIPTIONS ARE MISSING"
   echo ""
   echo "This is why your function is not being triggered!"
+  echo "The system topic exists, but the container monitoring subscriptions don't."
   echo ""
   echo "To fix this, run:"
   echo "  export QUALYS_ACCESS_TOKEN='your-token-here'"
@@ -76,7 +100,7 @@ if [ -z "$TOPIC_NAME" ] || [ -z "$SUBS" ]; then
   echo ""
 else
   echo ""
-  echo "✓ Event Grid is configured"
+  echo "✓ Event Grid container scanner subscriptions are configured"
   echo ""
   echo "If scans still aren't triggering, check:"
   echo "  1. Function logs: func azure functionapp logstream $FUNC_NAME"
