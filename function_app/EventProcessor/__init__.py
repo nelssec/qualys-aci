@@ -3,30 +3,18 @@ import json
 import logging
 import azure.functions as func
 from datetime import datetime
+import sys
+from pathlib import Path
 
-# Import helper modules
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+
 from qualys_scanner_aci import QScannerACI
 from image_parser import ImageParser
 from storage_handler import StorageHandler
 
-app = func.FunctionApp()
 
-@app.function_name(name="HttpTest")
-@app.route(route="test", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
-def http_test(req: func.HttpRequest) -> func.HttpResponse:
-    """Simple HTTP test endpoint to verify the function app is running"""
-    logging.info('HTTP trigger function processed a request.')
-
-    return func.HttpResponse(
-        "Function runtime is working!",
-        status_code=200
-    )
-
-
-@app.function_name(name="EventProcessor")
-@app.event_grid_trigger(arg_name="event")
-def event_processor(event: func.EventGridEvent):
-    """Process Event Grid events for container deployments"""
+def main(event: func.EventGridEvent):
     try:
         event_data = event.get_json()
         event_type = event.event_type
@@ -39,9 +27,7 @@ def event_processor(event: func.EventGridEvent):
         logging.info(f'Event Data Keys: {list(event_data.keys())}')
         logging.info(f'Full Event: {json.dumps(event_data, indent=2)}')
 
-        # Filter for container events (moved from Event Grid advanced filters)
-        # Check if this is a container-related event
-        # NOTE: These fields are at top level, not under 'data'
+        # Filter for container events
         resource_provider = event_data.get('resourceProvider', '')
         operation_name = event_data.get('operationName', '')
         resource_uri = event_data.get('resourceUri', '')
@@ -64,7 +50,7 @@ def event_processor(event: func.EventGridEvent):
         if event_subscription_id:
             logging.info(f'Event from subscription: {event_subscription_id}')
 
-        # Extract resource group and container name from the resource URI
+        # Extract resource group and container name
         resource_group = extract_resource_group(subject)
         container_name = subject.split('/')[-1]
 
@@ -86,10 +72,7 @@ def event_processor(event: func.EventGridEvent):
         logging.info(f'Found {len(images)} container images to scan')
 
         scanner = QScannerACI(subscription_id=event_subscription_id)
-
-        storage = StorageHandler(
-            connection_string=os.environ['STORAGE_CONNECTION_STRING']
-        )
+        storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
 
         results = []
         for image in images:
@@ -163,7 +146,6 @@ def fetch_container_images(subscription_id: str, resource_group: str, container_
         credential = DefaultAzureCredential()
 
         if container_type == 'ACI':
-            # Fetch ACI container group details
             aci_client = ContainerInstanceManagementClient(credential, subscription_id)
             container_group = aci_client.container_groups.get(resource_group, container_name)
 
@@ -176,8 +158,6 @@ def fetch_container_images(subscription_id: str, resource_group: str, container_
                     images.append(container.image)
 
         elif container_type == 'ACA':
-            # Fetch ACA container app details
-            # Note: Would need ContainerAppsManagementClient for ACA
             logging.warning('ACA support not yet implemented')
 
     except Exception as e:
@@ -207,7 +187,6 @@ def extract_resource_group(subject: str) -> str:
     """Extract resource group name from Azure resource URI (case-insensitive)"""
     try:
         parts = subject.split('/')
-        # Handle both 'resourceGroups' and 'resourcegroups' (case-insensitive)
         parts_lower = [p.lower() for p in parts]
         rg_index = parts_lower.index('resourcegroups') + 1
         return parts[rg_index]
