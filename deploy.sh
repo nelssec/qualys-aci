@@ -23,7 +23,7 @@ echo "Qualys POD: $QUALYS_POD"
 echo ""
 
 # Step 0: Check for resource group and wait if deleting
-echo "[0/3] Checking for existing resources..."
+echo "[0/2] Checking for existing resources..."
 RG_STATE=$(az group show --name "$RG" --query 'properties.provisioningState' -o tsv 2>/dev/null || echo "NotFound")
 
 if [ "$RG_STATE" == "Deleting" ]; then
@@ -65,7 +65,7 @@ fi
 echo ""
 
 # Step 1: Deploy Infrastructure
-echo "[1/3] Deploying infrastructure..."
+echo "[1/2] Deploying infrastructure..."
 az deployment sub create \
   --location "$LOCATION" \
   --template-file infrastructure/main.bicep \
@@ -85,7 +85,7 @@ echo "Function App created: $FUNCTION_APP"
 echo ""
 
 # Step 2: Deploy Function Code
-echo "[2/3] Deploying function code..."
+echo "[2/2] Deploying function code..."
 echo "This may take 3-5 minutes for remote build..."
 cd function_app
 
@@ -107,25 +107,6 @@ else
 fi
 
 cd ..
-echo ""
-
-# Step 3: Enable Event Grid Subscriptions
-echo "[3/3] Enabling Event Grid subscriptions..."
-az deployment sub create \
-  --location "$LOCATION" \
-  --template-file infrastructure/main.bicep \
-  --parameters location="$LOCATION" \
-  --parameters resourceGroupName="$RG" \
-  --parameters qualysPod="$QUALYS_POD" \
-  --parameters qualysAccessToken="$QUALYS_ACCESS_TOKEN" \
-  --parameters enableEventGrid=true \
-  --output none
-
-if [ $? -ne 0 ]; then
-  echo "ERROR: Event Grid deployment failed"
-  exit 1
-fi
-
 echo ""
 echo "Deployment Complete"
 echo ""

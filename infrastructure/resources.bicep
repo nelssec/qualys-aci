@@ -203,14 +203,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: subscription().tenantId
         }
         {
-          name: 'QSCANNER_RESOURCE_GROUP'
-          value: resourceGroup().name
-        }
-        {
-          name: 'AZURE_REGION'
-          value: location
-        }
-        {
           name: 'STORAGE_CONNECTION_STRING'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
