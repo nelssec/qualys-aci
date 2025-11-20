@@ -39,15 +39,33 @@ Container Deployment → Activity Log → Event Hub → Azure Function (qscanner
 - Qualys Access Token ([generate here](https://qualysguard.qualys.com/cloudview-apps/#/tokens))
 - Azure Functions Core Tools 4.x (for local development)
 
+## Deployment Modes
+
+This scanner supports two deployment modes:
+
+### Mode 1: Single Subscription (Recommended for most customers)
+- Monitors containers in **one subscription**
+- All resource groups within that subscription
+- Simplest deployment
+- Use `deploy.sh`
+
+### Mode 2: Multi-Subscription (Enterprise)
+- Monitors containers across **multiple subscriptions**
+- Central Event Hub receives Activity Log from all subscriptions
+- One function app scans containers from all subscriptions
+- Use `deploy-multi.sh` + `add-spoke.sh`
+
 ## Deployment
 
-### Step 1: Deploy Infrastructure
+### Single Subscription Deployment
 
+**Quick Start:**
 ```bash
+export QUALYS_ACCESS_TOKEN="your-token"
 ./deploy.sh
 ```
 
-Or manually:
+**Manual:**
 ```bash
 az deployment sub create \
   --location eastus \
@@ -81,6 +99,67 @@ The deployment automatically creates:
 - Administrative events filtered and routed to Function
 
 No manual Event Grid configuration needed - Activity Log handles all subscription-wide monitoring.
+
+### Multi-Subscription Deployment
+
+For enterprises with multiple Azure subscriptions:
+
+**Step 1: Deploy Central Hub**
+
+Deploy the central scanner in one subscription (this will receive events from all subscriptions):
+
+```bash
+export QUALYS_ACCESS_TOKEN="your-token"
+export CENTRAL_SUBSCRIPTION_ID="<central-subscription-id>"
+./deploy-multi.sh
+```
+
+This creates:
+- Function App (central scanner)
+- Event Hub (receives Activity Log from all subscriptions)
+- Storage, Key Vault, App Insights
+- RBAC roles for the central subscription
+
+**Step 2: Add Spoke Subscriptions**
+
+For each additional subscription you want to monitor:
+
+```bash
+export SPOKE_SUBSCRIPTION_ID="<subscription-id>"
+./add-spoke.sh
+```
+
+This configures:
+- Activity Log → Central Event Hub
+- Reader role for function app
+- AcrPull role for function app
+
+**Manual spoke deployment:**
+```bash
+az account set --subscription <spoke-sub-id>
+az deployment sub create \
+  --location eastus \
+  --template-file infrastructure/spoke.bicep \
+  --parameters centralSubscriptionId='<central-sub-id>' \
+  --parameters centralResourceGroupName='qualys-scanner-rg' \
+  --parameters eventHubNamespace='<hub-namespace>' \
+  --parameters eventHubSendConnectionString='<connection-string>' \
+  --parameters functionAppPrincipalId='<function-principal-id>'
+```
+
+**Architecture:**
+```
+Central Subscription
+├── Function App (scans all containers)
+├── Event Hub (receives from all subs)
+└── Activity Log → Local Event Hub
+
+Spoke Subscription 1
+└── Activity Log → Central Event Hub
+
+Spoke Subscription 2
+└── Activity Log → Central Event Hub
+```
 
 ## Testing
 
@@ -415,15 +494,7 @@ custom_tags = {
 
 ### Multi-Subscription Deployment
 
-Deploy once per subscription:
-```bash
-for SUB in sub1 sub2 sub3; do
-  az account set --subscription $SUB
-  ./deploy.sh
-done
-```
-
-For centralized management, use [Azure Lighthouse](https://azure.microsoft.com/en-us/services/azure-lighthouse/).
+See the [Multi-Subscription Deployment](#multi-subscription-deployment) section above for enterprise deployments across multiple subscriptions using a central Event Hub.
 
 ## Development
 
