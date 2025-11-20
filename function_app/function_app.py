@@ -5,7 +5,7 @@ import azure.functions as func
 from datetime import datetime
 
 # Import helper modules
-from qualys_scanner_aci import QScannerACI
+from qualys_scanner_binary import QScannerBinary
 from image_parser import ImageParser
 from storage_handler import StorageHandler
 
@@ -79,21 +79,6 @@ def fetch_container_images(subscription_id: str, resource_group: str, container_
     return images
 
 
-def should_alert(scan_result: dict) -> bool:
-    notify_threshold = os.environ.get('NOTIFY_SEVERITY_THRESHOLD', 'HIGH')
-
-    vulnerabilities = scan_result.get('vulnerabilities', {})
-    critical_count = vulnerabilities.get('CRITICAL', 0)
-    high_count = vulnerabilities.get('HIGH', 0)
-
-    if notify_threshold == 'CRITICAL':
-        return critical_count > 0
-    elif notify_threshold == 'HIGH':
-        return critical_count > 0 or high_count > 0
-
-    return False
-
-
 def extract_resource_group(subject: str) -> str:
     """Extract resource group name from Azure resource URI (case-insensitive)"""
     try:
@@ -104,22 +89,6 @@ def extract_resource_group(subject: str) -> str:
     except Exception as e:
         logging.error(f'Failed to extract resource group from subject: {subject}, error: {e}')
         return 'unknown'
-
-
-def send_alert(scan_result: dict):
-    try:
-        notification_email = os.environ.get('NOTIFICATION_EMAIL')
-        if not notification_email:
-            logging.warning('NOTIFICATION_EMAIL not configured, skipping alert')
-            return
-
-        logging.warning(
-            f'SECURITY ALERT: High severity vulnerabilities found in {scan_result["image"]}. '
-            f'Vulnerabilities: {scan_result["vulnerabilities"]}'
-        )
-
-    except Exception as e:
-        logging.error(f'Error sending alert: {str(e)}')
 
 
 def process_activity_log_record(record: dict):
@@ -178,7 +147,8 @@ def process_activity_log_record(record: dict):
                 logging.info(f'  Image {idx + 1}: {img}')
 
             # Initialize scanner and storage
-            scanner = QScannerACI()
+            # Using remote registry scanning (Option 3) - no container runtime needed!
+            scanner = QScannerBinary(subscription_id=subscription_id)
             storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
 
             # Scan each image
@@ -194,17 +164,26 @@ def process_activity_log_record(record: dict):
                         logging.info(f'  CACHED: Image recently scanned')
                         continue
 
+                    # Custom tags for tracking
+                    custom_tags = {
+                        'azure_resource_id': resource_id,
+                        'container_type': container_type,
+                        'scan_method': 'remote_registry'
+                    }
+
                     scan_result = scanner.scan_image(
                         registry=image_info['registry'],
                         repository=image_info['repository'],
                         tag=image_info['tag'],
                         digest=image_info.get('digest'),
-                        resource_id=resource_id
+                        custom_tags=custom_tags
                     )
 
-                    logging.info(f'  SCAN SUBMITTED: scan_id={scan_result.get("scan_id")}')
-                    logging.info(f'  ACI Container: {scan_result.get("container_group")}')
-                    logging.info(f'  Provisioning State: {scan_result.get("provisioning_state")}')
+                    logging.info(f'  SCAN COMPLETED: scan_id={scan_result.get("scan_id")}')
+                    logging.info(f'  Status: {scan_result.get("status")}')
+
+                    vulnerabilities = scan_result.get('vulnerabilities', {})
+                    logging.info(f'  Vulnerabilities: Critical={vulnerabilities.get("CRITICAL", 0)}, High={vulnerabilities.get("HIGH", 0)}')
 
                     result_record = {
                         'timestamp': datetime.utcnow().isoformat(),
@@ -213,8 +192,8 @@ def process_activity_log_record(record: dict):
                         'resource_id': resource_id,
                         'scan_id': scan_result.get('scan_id'),
                         'status': scan_result.get('status'),
-                        'aci_container': scan_result.get('container_group'),
-                        'provisioning_state': scan_result.get('provisioning_state')
+                        'vulnerabilities': vulnerabilities,
+                        'scan_method': 'remote_registry'
                     }
 
                     storage.save_scan_result(result_record)

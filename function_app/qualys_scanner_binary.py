@@ -232,26 +232,29 @@ class QScannerBinary:
 
     def _run_qscanner(self, image_id: str, custom_tags: Optional[Dict] = None) -> str:
         """
-        Run qscanner binary as subprocess
+        Run qscanner binary as subprocess with remote registry scanning (Option 3)
 
         Args:
-            image_id: Full image identifier to scan
+            image_id: Full image identifier to scan (e.g., myacr.azurecr.io/image:tag)
             custom_tags: Optional tags for scan tracking
 
         Returns:
             qscanner output (JSON)
         """
-        # Build command
+        # Build command for Option 3: Remote Images with ACR
+        # Per Qualys ACR documentation: ./qscanner --pod US2 image <project>.azurecr.io/<image>:<tag>
+        # The 'image' subcommand works for both local images (Option 1) and remote images (Option 3)
+        # QScanner auto-detects it's a remote ACR URL and uses Azure SDK to authenticate via managed identity
         cmd = [
             self.qscanner_path,
-            'image',
-            image_id,
             '--pod', self.qualys_pod,
             '--scan-types', 'os,sca,secret',
             '--format', 'json',
             '--access-token', self.qualys_access_token,
             '--save',
-            '--skip-verify-tls'
+            '--skip-verify-tls',
+            'image',  # Required per Qualys ACR docs
+            image_id  # Image URL (e.g., myacr.azurecr.io/app:latest)
         ]
 
         # Add custom tags
@@ -259,10 +262,32 @@ class QScannerBinary:
             for key, value in custom_tags.items():
                 cmd.extend(['--tag', f'{key}={value}'])
 
-        # Environment
+        # Environment - Configure Azure SDK for ACR authentication
+        # QScanner uses Azure SDK which automatically detects managed identity in Azure Functions
+        # via MSI_ENDPOINT and MSI_SECRET environment variables (auto-provided by Azure)
         env = os.environ.copy()
 
-        logging.info(f'Running: {" ".join(cmd[:4])}... (credentials hidden)')
+        # For Azure ACR with system-assigned managed identity:
+        # - MSI_ENDPOINT: Auto-provided by Azure Functions (enables managed identity)
+        # - AZURE_TENANT_ID: The Azure AD tenant ID (configured in function app settings)
+        # - QSCANNER_REGISTRY_USERNAME: MUST NOT be set (conflicts with Azure SDK auth)
+
+        # Verify managed identity is available (Azure Functions provides MSI_ENDPOINT)
+        if 'MSI_ENDPOINT' in env:
+            logging.info(f'Using Azure system-assigned managed identity for ACR authentication')
+            logging.info(f'  MSI Endpoint: {env["MSI_ENDPOINT"][:50]}...')
+            logging.info(f'  Tenant ID: {env.get("AZURE_TENANT_ID", "not set")}')
+
+            # Ensure QSCANNER_REGISTRY_USERNAME is NOT set (critical for Azure SDK auth)
+            if 'QSCANNER_REGISTRY_USERNAME' in env:
+                logging.warning('Removing QSCANNER_REGISTRY_USERNAME (conflicts with Azure SDK)')
+                del env['QSCANNER_REGISTRY_USERNAME']
+        else:
+            logging.warning('MSI_ENDPOINT not found - not running in Azure Functions or managed identity not enabled')
+            logging.warning('ACR authentication may fail for private registries')
+
+        logging.info(f'Running remote registry scan: {image_id}')
+        logging.info(f'Command: qscanner --pod {self.qualys_pod} ... {image_id}')
 
         try:
             # Run qscanner

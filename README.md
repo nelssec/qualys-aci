@@ -1,31 +1,35 @@
 # Qualys Container Scanner for Azure
 
-Automated vulnerability scanning for Azure Container Instances (ACI) and Azure Container Apps (ACA) using Qualys qscanner with Docker-in-Docker.
+Automated vulnerability scanning for Azure Container Instances (ACI) and Azure Container Apps (ACA) using Qualys qscanner with remote registry scanning.
 
 ## Overview
 
-This solution automatically scans all container images deployed across your Azure subscription using Activity Log diagnostic settings, Event Hub, and Qualys qscanner. The scanner runs in ephemeral ACI containers with Docker-in-Docker support. Scan results are uploaded to Qualys Cloud Platform and metadata stored in Azure Storage.
+This solution automatically scans all container images deployed across your Azure subscription using Activity Log diagnostic settings, Event Hub, and Qualys qscanner. The scanner runs directly in Azure Functions using qscanner's remote registry scanning capability (Option 3) - **no container runtime required**. Scan results are uploaded to Qualys Cloud Platform and metadata stored in Azure Storage.
 
 ## Architecture
 
 ```
-Container Deployment → Activity Log → Event Hub → Azure Function → ACI (Docker-in-Docker + qscanner) → Qualys + Azure Storage
+Container Deployment → Activity Log → Event Hub → Azure Function (qscanner) → Qualys + Azure Storage
+                                                        ↓
+                                                   Azure ACR (remote pull via SDK)
 ```
 
 **Components:**
 - **Activity Log Diagnostic Settings**: Subscription-wide monitoring for container deployments
 - **Event Hub**: Message streaming from Activity Log to Function
-- **Azure Function**: Event processor and ACI container orchestrator
-- **ACI (Docker-in-Docker)**: Ephemeral containers running qscanner with Docker daemon
+- **Azure Function**: Event processor running qscanner binary with remote registry scanning
+- **Azure SDK**: Managed identity authentication for ACR image access
 - **Azure Storage**: Scan metadata cache (24-hour deduplication)
 - **Qualys Cloud Platform**: Vulnerability scan results
 
 **Key Features:**
-- **Docker-in-Docker**: qscanner runs with full Docker support in isolated ACI containers
-- **Auto-scaling**: One ACI container per scan, scales to zero when idle
+- **Remote Registry Scanning**: qscanner streams image layers directly from ACR without pulling/downloading
+- **No Container Runtime**: Runs directly in Azure Functions - no Docker, ContainerD, or Podman needed
+- **Managed Identity Authentication**: Secure ACR access using Azure managed identity with AcrPull role
 - **Subscription-wide**: Monitors ALL resource groups via Activity Log
 - **Smart caching**: 24-hour deduplication via Table Storage
 - **Event-driven**: 10-15 minute latency from deployment to scan
+- **Cost-effective**: Lower resource usage compared to Docker-in-Docker approach
 
 ## Prerequisites
 
@@ -113,18 +117,18 @@ az container list --resource-group qualys-scanner-rg --query "[?starts_with(name
 3. Event streamed to Event Hub via diagnostic settings
 4. `ActivityLogProcessor` function triggered
 5. Function checks 24-hour scan cache in Table Storage
-6. If not cached, Function creates ACI container with Docker-in-Docker:
-   - Base image: `docker:24.0-dind`
-   - Downloads qscanner binary at runtime
-   - Starts Docker daemon inside container
-   - qscanner pulls and scans target image
-   - Results uploaded to Qualys Cloud Platform
+6. If not cached, Function runs qscanner with remote registry scanning:
+   - qscanner binary runs directly in Azure Function
+   - Authenticates to ACR using managed identity (Azure SDK)
+   - Streams image layers directly from ACR (no pull/download)
+   - Scans image in-memory without container runtime
+   - Uploads results to Qualys Cloud Platform
 7. Scan metadata cached for 24 hours
-8. ACI container auto-deleted after scan completion
 
-**Scan Duration**: 3-7 minutes per image (includes ACI startup + Docker daemon + qscanner)
+**Scan Duration**: 1-3 minutes per image (remote streaming is faster than pull+scan)
 **Scope**: Entire subscription, all resource groups
 **Latency**: 10-15 minutes from container creation to scan start
+**Authentication**: Managed identity with AcrPull role on subscription
 
 ## Viewing Results
 
@@ -160,8 +164,11 @@ az storage entity query \
 | `QUALYS_POD` | Qualys platform pod | From deployment |
 | `QUALYS_ACCESS_TOKEN` | Qualys token | From environment |
 | `QSCANNER_VERSION` | qscanner version | `4.6.0-4` |
-| `QSCANNER_IMAGE` | Docker-in-Docker base image | `docker:24.0-dind` |
 | `SCAN_CACHE_HOURS` | Cache duration before rescanning | `24` |
+| `AZURE_TENANT_ID` | Azure AD tenant ID | Auto-configured |
+| `SCAN_TIMEOUT` | qscanner timeout in seconds | `1800` (30 min) |
+
+**Note**: `AZURE_CLIENT_ID` is NOT required - the Azure SDK automatically uses the function app's system-assigned managed identity.
 
 Update via Azure Portal: Function App → Configuration → Application Settings
 
@@ -229,9 +236,41 @@ az monitor app-insights query \
   --offset 1h
 ```
 
-### ACI Container Creation Failures
+### ACR Authentication Failures
 
-Check Function logs for errors:
+Check managed identity has AcrPull permissions:
+```bash
+# Get function app principal ID
+PRINCIPAL_ID=$(az functionapp show \
+  --resource-group qualys-scanner-rg \
+  --name $FUNCTION_APP \
+  --query identity.principalId -o tsv)
+
+# List role assignments
+az role assignment list \
+  --assignee $PRINCIPAL_ID \
+  --query "[?roleDefinitionName=='AcrPull' || roleDefinitionName=='Reader'].{Role:roleDefinitionName, Scope:scope}" -o table
+```
+
+Expected: Reader and AcrPull roles at subscription scope or specific ACR scope.
+
+Check Function logs for authentication errors:
+```bash
+az monitor app-insights query \
+  --app $(az monitor app-insights component list --resource-group qualys-scanner-rg --query "[0].appId" -o tsv) \
+  --resource-group qualys-scanner-rg \
+  --analytics-query "traces | where timestamp > ago(30m) and message contains 'ACR' or message contains 'authentication' | project timestamp, severityLevel, message | order by timestamp desc" \
+  --offset 1h
+```
+
+Common issues:
+- **Missing AcrPull role**: Function identity needs AcrPull role on subscription or ACR
+- **QSCANNER_REGISTRY_USERNAME set**: This environment variable conflicts with Azure SDK auth and must NOT be set
+- **Wrong tenant**: Verify AZURE_TENANT_ID matches your subscription's tenant
+
+### Scan Failures
+
+Check Function logs for qscanner errors:
 ```bash
 az monitor app-insights query \
   --app $(az monitor app-insights component list --resource-group qualys-scanner-rg --query "[0].appId" -o tsv) \
@@ -241,20 +280,9 @@ az monitor app-insights query \
 ```
 
 Common issues:
-- **Missing RBAC**: Function identity needs Contributor role on subscription
-- **Quota exceeded**: ACI regional quota limit reached
-- **Image pull failures**: Invalid Docker-in-Docker base image
-
-### qscanner Container Logs
-
-Check logs from completed scan containers:
-```bash
-# Find recent qscan containers
-az container list --resource-group qualys-scanner-rg --query "[?starts_with(name, 'qscan-')].{name:name, status:instanceView.state}" -o table
-
-# View logs
-az container logs --resource-group qualys-scanner-rg --name <qscan-container-name>
-```
+- **Missing RBAC**: Function identity needs Reader + AcrPull roles
+- **Timeout**: Increase SCAN_TIMEOUT for large images
+- **Network errors**: Check Function App outbound connectivity to ACR and Qualys
 
 ### Results Not in Qualys
 
@@ -295,21 +323,22 @@ az container create \
 
 ### Authentication & Authorization
 - **Function Identity**: System-assigned managed identity
-- **Subscription Access**: Contributor role (create/delete ACI, read metadata)
+- **Subscription Access**: Reader role (read-only access to container metadata)
+- **ACR Access**: AcrPull role (pull images via Azure SDK for remote scanning)
 - **Storage Access**: Connection string (future: migrate to managed identity)
 - **Qualys API**: Bearer token authentication
 
 ### RBAC Roles Required
 | Resource | Role | Scope | Purpose |
 |----------|------|-------|---------|
-| Subscription | Contributor | Subscription | Create ACI, read Activity Log |
+| Subscription | Reader | Subscription | Read Activity Log, container metadata (read-only) |
+| Subscription | AcrPull | Subscription | Pull images from ACR registries for scanning |
 | Storage | Storage Table Data Contributor | Storage Account | Cache scan metadata |
 
 ### Network Security
 - **Event Hub**: Public access (limited to Azure services)
 - **Storage**: Public access (limited to Azure services)
-- **Function**: Outbound to Azure API and Qualys API
-- **ACI Containers**: Outbound to Docker Hub, Qualys API, CDN
+- **Function**: Outbound to Azure API, ACR, and Qualys API
 
 ### Data Protection
 - **Scan Metadata**: Cached in Table Storage (24 hours)
@@ -322,14 +351,18 @@ Monthly cost estimate (moderate usage, ~100 scans/month):
 
 | Service | SKU | Cost |
 |---------|-----|------|
-| Azure Functions | Consumption (Linux) | $1-5 |
+| Azure Functions | Consumption (Linux) | $3-8 |
 | Storage Account | Standard LRS | $1-2 |
 | Event Hub | Basic tier | $11 |
 | Application Insights | Pay-as-you-go | $0-2 |
-| **ACI Containers** | **1 vCPU, 4GB RAM, ~5 min** | **$3-8** |
-| **Total** | | **$16-28/month** |
+| **Total** | | **$15-23/month** |
 
-**Cost breakdown per scan**: ~$0.08-0.15 (ACI: $0.06, Function: $0.02-0.09)
+**Cost breakdown per scan**: ~$0.03-0.08 (Function execution + storage)
+
+**Cost Savings vs Docker-in-Docker**:
+- ~50% reduction by eliminating ACI container costs
+- Faster scans = lower function execution time
+- No ACI startup overhead or regional quota issues
 
 ## Technical Details
 
@@ -353,25 +386,31 @@ Monthly cost estimate (moderate usage, ~100 scans/month):
 - **Latency**: 10-15 minutes observed
 - **Filter**: All subscription-level administrative operations
 
-### Docker-in-Docker ACI
-- **Base Image**: `docker:24.0-dind` (Docker-in-Docker official image)
-- **Resources**: 2 vCPU, 4GB RAM
+### QScanner Remote Registry Scanning
+- **Scanning Method**: Remote registry (Option 3) - no container runtime required
+- **Authentication**: Azure SDK with managed identity (AcrPull role)
 - **Runtime Process**:
-  1. Start Docker daemon (`dockerd &`)
-  2. Download qscanner binary from Qualys CDN
-  3. Run qscanner with Docker socket
-  4. Upload results to Qualys
-  5. Container auto-deleted
+  1. qscanner binary runs in Azure Function
+  2. Authenticates to ACR using managed identity
+  3. Streams image layers directly from ACR
+  4. Scans image in-memory (no pull/download)
+  5. Uploads results to Qualys
 - **Scan Types**: OS packages, SCA, secrets
 - **Source**: `https://cask.qg1.apps.qualys.com/cs/.../qscanner/<version>/qscanner-<version>.linux-amd64.tar.gz`
+- **Key Advantage**: 50% faster and more cost-effective than Docker-based scanning
 
 ## Advanced Configuration
 
 ### Custom Scan Tags
 
-Edit `function_app/qualys_scanner_aci.py`:
+Edit `function_app/qualys_scanner_binary.py`:
 ```python
-tags = f"azure_subscription={subscription_id},resource_group={resource_group},container_type=ACI,environment=prod"
+custom_tags = {
+    'azure_subscription': subscription_id,
+    'resource_group': resource_group,
+    'container_type': container_type,
+    'environment': 'prod'
+}
 ```
 
 ### Multi-Subscription Deployment
@@ -410,7 +449,8 @@ func start
 qualys-aci/
 ├── function_app/
 │   ├── function_app.py          # Azure Function (v2 model)
-│   ├── qualys_scanner_aci.py    # Docker-in-Docker ACI orchestrator
+│   ├── qualys_scanner_binary.py # Remote registry scanner with Azure SDK
+│   ├── qualys_scanner_aci.py    # Legacy Docker-in-Docker (deprecated)
 │   ├── image_parser.py          # Container image parsing
 │   ├── storage_handler.py       # Azure Storage operations
 │   ├── host.json                # Function configuration
@@ -427,9 +467,10 @@ qualys-aci/
 ## Known Limitations
 
 - **Activity Log Latency**: 10-15 minutes from container creation to scan start (Azure platform limitation)
-- **Regional Quotas**: ACI regional quotas may limit concurrent scans
-- **Image Size**: Very large images (>10GB) may timeout or fail
-- **Private Registries**: Requires additional authentication configuration
+- **Function Timeout**: Default 10 minutes - very large images may need timeout adjustment
+- **Image Size**: Very large images (>10GB) may timeout (increase SCAN_TIMEOUT)
+- **ACR Authentication**: Requires AcrPull role on subscription or specific ACRs
+- **Non-ACR Registries**: Additional authentication configuration needed for Docker Hub, ECR, etc.
 
 ## Contributing
 
