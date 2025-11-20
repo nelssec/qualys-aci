@@ -249,10 +249,10 @@ PRINCIPAL_ID=$(az functionapp show \
 # List role assignments
 az role assignment list \
   --assignee $PRINCIPAL_ID \
-  --query "[?roleDefinitionName=='AcrPull' || roleDefinitionName=='Contributor'].{Role:roleDefinitionName, Scope:scope}" -o table
+  --query "[?roleDefinitionName=='AcrPull' || roleDefinitionName=='Reader'].{Role:roleDefinitionName, Scope:scope}" -o table
 ```
 
-Expected: AcrPull role at subscription scope or specific ACR scope.
+Expected: Reader and AcrPull roles at subscription scope or specific ACR scope.
 
 Check Function logs for authentication errors:
 ```bash
@@ -280,7 +280,7 @@ az monitor app-insights query \
 ```
 
 Common issues:
-- **Missing RBAC**: Function identity needs Contributor + AcrPull roles
+- **Missing RBAC**: Function identity needs Reader + AcrPull roles
 - **Timeout**: Increase SCAN_TIMEOUT for large images
 - **Network errors**: Check Function App outbound connectivity to ACR and Qualys
 
@@ -323,7 +323,7 @@ az container create \
 
 ### Authentication & Authorization
 - **Function Identity**: System-assigned managed identity
-- **Subscription Access**: Contributor role (read container metadata)
+- **Subscription Access**: Reader role (read-only access to container metadata)
 - **ACR Access**: AcrPull role (pull images via Azure SDK for remote scanning)
 - **Storage Access**: Connection string (future: migrate to managed identity)
 - **Qualys API**: Bearer token authentication
@@ -331,7 +331,7 @@ az container create \
 ### RBAC Roles Required
 | Resource | Role | Scope | Purpose |
 |----------|------|-------|---------|
-| Subscription | Contributor | Subscription | Read Activity Log, container metadata |
+| Subscription | Reader | Subscription | Read Activity Log, container metadata (read-only) |
 | Subscription | AcrPull | Subscription | Pull images from ACR registries for scanning |
 | Storage | Storage Table Data Contributor | Storage Account | Cache scan metadata |
 

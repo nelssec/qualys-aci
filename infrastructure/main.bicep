@@ -32,10 +32,13 @@ module resources 'resources.bicep' = {
   }
 }
 
-resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, rg.id, 'Contributor')
+// Grant Reader role at subscription level for reading container metadata
+// This is the minimum permission needed to read ACI and ACA container details
+// Reader role only allows READ operations - no create/update/delete permissions
+resource readerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, rg.id, 'Reader')
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
     principalId: resources.outputs.functionAppPrincipalId
     principalType: 'ServicePrincipal'
   }
