@@ -199,6 +199,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: subscription().subscriptionId
         }
         {
+          name: 'AZURE_TENANT_ID'
+          value: subscription().tenantId
+        }
+        {
           name: 'QSCANNER_RESOURCE_GROUP'
           value: resourceGroup().name
         }

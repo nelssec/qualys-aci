@@ -41,6 +41,17 @@ resource contributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
+// Grant AcrPull role at subscription level for remote registry scanning
+// This allows QScanner to pull images from any ACR in the subscription
+resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, rg.id, 'AcrPull')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: resources.outputs.functionAppPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource activityLogDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name: 'activity-log-to-eventhub'
   scope: subscription()

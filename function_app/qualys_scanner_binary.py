@@ -232,26 +232,26 @@ class QScannerBinary:
 
     def _run_qscanner(self, image_id: str, custom_tags: Optional[Dict] = None) -> str:
         """
-        Run qscanner binary as subprocess
+        Run qscanner binary as subprocess with remote registry scanning (Option 3)
 
         Args:
-            image_id: Full image identifier to scan
+            image_id: Full image identifier to scan (e.g., myacr.azurecr.io/image:tag)
             custom_tags: Optional tags for scan tracking
 
         Returns:
             qscanner output (JSON)
         """
-        # Build command
+        # Build command - NOTE: We pass the image URL directly, NOT using 'image' subcommand
+        # QScanner will detect it's a remote registry and use Azure SDK to authenticate
         cmd = [
             self.qscanner_path,
-            'image',
-            image_id,
             '--pod', self.qualys_pod,
             '--scan-types', 'os,sca,secret',
             '--format', 'json',
             '--access-token', self.qualys_access_token,
             '--save',
-            '--skip-verify-tls'
+            '--skip-verify-tls',
+            image_id  # Pass image URL directly for remote scanning
         ]
 
         # Add custom tags
@@ -259,10 +259,29 @@ class QScannerBinary:
             for key, value in custom_tags.items():
                 cmd.extend(['--tag', f'{key}={value}'])
 
-        # Environment
+        # Environment - Configure Azure SDK for ACR authentication
+        # See: https://docs.qualys.com for ACR remote scanning requirements
         env = os.environ.copy()
 
-        logging.info(f'Running: {" ".join(cmd[:4])}... (credentials hidden)')
+        # For Azure ACR with managed identity:
+        # - AZURE_CLIENT_ID: The client ID of the user-assigned managed identity
+        # - AZURE_TENANT_ID: The Azure AD tenant ID
+        # - QSCANNER_REGISTRY_USERNAME: MUST NOT be set (conflicts with Azure SDK auth)
+
+        # Get managed identity configuration from environment
+        if 'AZURE_CLIENT_ID' in env:
+            logging.info(f'Using Azure managed identity for ACR authentication')
+            logging.info(f'  Client ID: {env["AZURE_CLIENT_ID"][:8]}...')
+
+            # Ensure QSCANNER_REGISTRY_USERNAME is NOT set (critical for Azure SDK auth)
+            if 'QSCANNER_REGISTRY_USERNAME' in env:
+                logging.warning('Removing QSCANNER_REGISTRY_USERNAME (conflicts with Azure SDK)')
+                del env['QSCANNER_REGISTRY_USERNAME']
+        else:
+            logging.warning('AZURE_CLIENT_ID not set - ACR authentication may fail for private registries')
+
+        logging.info(f'Running remote registry scan: {image_id}')
+        logging.info(f'Command: qscanner --pod {self.qualys_pod} ... {image_id}')
 
         try:
             # Run qscanner
