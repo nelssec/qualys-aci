@@ -7,16 +7,6 @@ param qualysPod string
 @description('Qualys API access token for container scanning')
 param qualysAccessToken string
 
-@description('Optional email for vulnerability notifications')
-param notificationEmail string = ''
-
-@allowed([
-  'CRITICAL'
-  'HIGH'
-])
-@description('Minimum severity level for notifications')
-param notifySeverityThreshold string = 'HIGH'
-
 @minValue(1)
 @maxValue(168)
 @description('Hours to cache scan results before rescanning')
@@ -205,14 +195,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'STORAGE_CONNECTION_STRING'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        }
-        {
-          name: 'NOTIFICATION_EMAIL'
-          value: notificationEmail
-        }
-        {
-          name: 'NOTIFY_SEVERITY_THRESHOLD'
-          value: notifySeverityThreshold
         }
         {
           name: 'SCAN_CACHE_HOURS'

@@ -79,21 +79,6 @@ def fetch_container_images(subscription_id: str, resource_group: str, container_
     return images
 
 
-def should_alert(scan_result: dict) -> bool:
-    notify_threshold = os.environ.get('NOTIFY_SEVERITY_THRESHOLD', 'HIGH')
-
-    vulnerabilities = scan_result.get('vulnerabilities', {})
-    critical_count = vulnerabilities.get('CRITICAL', 0)
-    high_count = vulnerabilities.get('HIGH', 0)
-
-    if notify_threshold == 'CRITICAL':
-        return critical_count > 0
-    elif notify_threshold == 'HIGH':
-        return critical_count > 0 or high_count > 0
-
-    return False
-
-
 def extract_resource_group(subject: str) -> str:
     """Extract resource group name from Azure resource URI (case-insensitive)"""
     try:
@@ -104,22 +89,6 @@ def extract_resource_group(subject: str) -> str:
     except Exception as e:
         logging.error(f'Failed to extract resource group from subject: {subject}, error: {e}')
         return 'unknown'
-
-
-def send_alert(scan_result: dict):
-    try:
-        notification_email = os.environ.get('NOTIFICATION_EMAIL')
-        if not notification_email:
-            logging.warning('NOTIFICATION_EMAIL not configured, skipping alert')
-            return
-
-        logging.warning(
-            f'SECURITY ALERT: High severity vulnerabilities found in {scan_result["image"]}. '
-            f'Vulnerabilities: {scan_result["vulnerabilities"]}'
-        )
-
-    except Exception as e:
-        logging.error(f'Error sending alert: {str(e)}')
 
 
 def process_activity_log_record(record: dict):

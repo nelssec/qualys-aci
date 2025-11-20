@@ -5,8 +5,6 @@ param resourceGroupName string = 'qualys-scanner-rg'
 param qualysPod string
 @secure()
 param qualysAccessToken string
-param notificationEmail string = ''
-param notifySeverityThreshold string = 'HIGH'
 param scanCacheHours int = 24
 param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
@@ -23,8 +21,6 @@ module resources 'resources.bicep' = {
     location: location
     qualysPod: qualysPod
     qualysAccessToken: qualysAccessToken
-    notificationEmail: notificationEmail
-    notifySeverityThreshold: notifySeverityThreshold
     scanCacheHours: scanCacheHours
     functionAppSku: functionAppSku
     functionPackageUrl: functionPackageUrl
