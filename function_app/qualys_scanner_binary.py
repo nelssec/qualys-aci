@@ -8,6 +8,7 @@ import json
 import logging
 import subprocess
 import urllib.request
+import time
 from typing import Dict, Optional
 from datetime import datetime
 from pathlib import Path
@@ -233,10 +234,61 @@ class QScannerBinary:
     def _run_qscanner(self, image_id: str, custom_tags: Optional[Dict] = None) -> str:
         """
         Run qscanner binary as subprocess with remote registry scanning (Option 3)
+        Includes retry logic with exponential backoff for transient failures
 
         Args:
             image_id: Full image identifier to scan (e.g., myacr.azurecr.io/image:tag)
             custom_tags: Optional tags for scan tracking
+
+        Returns:
+            qscanner output (JSON)
+        """
+        max_retries = 3
+        base_delay = 2
+
+        for attempt in range(max_retries + 1):
+            try:
+                return self._execute_qscanner(image_id, custom_tags, attempt)
+            except Exception as e:
+                is_last_attempt = attempt == max_retries
+                is_retryable = self._is_retryable_error(e)
+
+                if is_last_attempt or not is_retryable:
+                    logging.error(f'qscanner failed after {attempt + 1} attempts')
+                    raise
+
+                delay = base_delay * (2 ** attempt)
+                logging.warning(f'qscanner attempt {attempt + 1} failed with retryable error: {str(e)}')
+                logging.info(f'Retrying in {delay} seconds...')
+                time.sleep(delay)
+
+        raise Exception('qscanner retry logic failed unexpectedly')
+
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """Check if error is retryable (network issues, rate limits, etc.)"""
+        error_str = str(error).lower()
+        retryable_patterns = [
+            'connection',
+            'timeout',
+            'network',
+            'temporary',
+            'rate limit',
+            'too many requests',
+            '429',
+            '502',
+            '503',
+            '504'
+        ]
+        return any(pattern in error_str for pattern in retryable_patterns)
+
+    def _execute_qscanner(self, image_id: str, custom_tags: Optional[Dict], attempt: int) -> str:
+        """
+        Execute qscanner binary for a single attempt
+
+        Args:
+            image_id: Full image identifier
+            custom_tags: Optional tags
+            attempt: Current attempt number (0-indexed)
 
         Returns:
             qscanner output (JSON)
@@ -274,9 +326,10 @@ class QScannerBinary:
 
         # Verify managed identity is available (Azure Functions provides MSI_ENDPOINT)
         if 'MSI_ENDPOINT' in env:
-            logging.info(f'Using Azure system-assigned managed identity for ACR authentication')
-            logging.info(f'  MSI Endpoint: {env["MSI_ENDPOINT"][:50]}...')
-            logging.info(f'  Tenant ID: {env.get("AZURE_TENANT_ID", "not set")}')
+            if attempt == 0:
+                logging.info(f'Using Azure system-assigned managed identity for ACR authentication')
+                logging.info(f'  MSI Endpoint: {env["MSI_ENDPOINT"][:50]}...')
+                logging.info(f'  Tenant ID: {env.get("AZURE_TENANT_ID", "not set")}')
 
             # Ensure QSCANNER_REGISTRY_USERNAME is NOT set (critical for Azure SDK auth)
             if 'QSCANNER_REGISTRY_USERNAME' in env:
@@ -286,8 +339,11 @@ class QScannerBinary:
             logging.warning('MSI_ENDPOINT not found - not running in Azure Functions or managed identity not enabled')
             logging.warning('ACR authentication may fail for private registries')
 
-        logging.info(f'Running remote registry scan: {image_id}')
-        logging.info(f'Command: qscanner --pod {self.qualys_pod} ... {image_id}')
+        if attempt == 0:
+            logging.info(f'Running remote registry scan: {image_id}')
+            logging.info(f'Command: qscanner --pod {self.qualys_pod} ... {image_id}')
+        else:
+            logging.info(f'Retry attempt {attempt + 1}: {image_id}')
 
         try:
             # Run qscanner
@@ -311,8 +367,11 @@ class QScannerBinary:
 
             # Exit codes 0 and 1 are acceptable (1 = vulnerabilities found)
             if result.returncode not in [0, 1]:
-                logging.error(f'qscanner exited with unexpected code {result.returncode}')
-                raise Exception(f'qscanner failed with exit code {result.returncode}')
+                error_msg = f'qscanner failed with exit code {result.returncode}'
+                if result.stderr:
+                    error_msg += f': {result.stderr}'
+                logging.error(error_msg)
+                raise Exception(error_msg)
 
             # Return stdout (JSON output)
             return result.stdout

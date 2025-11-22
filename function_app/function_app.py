@@ -82,9 +82,25 @@ def fetch_container_images(subscription_id: str, resource_group: str, container_
 def extract_resource_group(subject: str) -> str:
     """Extract resource group name from Azure resource URI (case-insensitive)"""
     try:
+        if not subject or not isinstance(subject, str):
+            logging.error(f'Invalid subject: {subject}')
+            return 'unknown'
+
         parts = subject.split('/')
+        if len(parts) < 5:
+            logging.error(f'Resource ID too short: {subject}')
+            return 'unknown'
+
         parts_lower = [p.lower() for p in parts]
+        if 'resourcegroups' not in parts_lower:
+            logging.error(f'Resource ID missing resourcegroups segment: {subject}')
+            return 'unknown'
+
         rg_index = parts_lower.index('resourcegroups') + 1
+        if rg_index >= len(parts):
+            logging.error(f'Resource ID malformed, no resource group name after resourcegroups: {subject}')
+            return 'unknown'
+
         return parts[rg_index]
     except Exception as e:
         logging.error(f'Failed to extract resource group from subject: {subject}, error: {e}')
@@ -113,17 +129,36 @@ def process_activity_log_record(record: dict):
             logging.info(f'EVENT MATCHED: {container_type} container creation detected')
 
             # Parse resource ID to extract subscription, resource group, and container name
+            # Expected format: /subscriptions/{sub}/resourceGroups/{rg}/providers/{provider}/{type}/{name}
             resource_parts = resource_id.split('/')
-            subscription_id = resource_parts[2] if len(resource_parts) > 2 else None
 
-            try:
-                resource_group_idx = [p.lower() for p in resource_parts].index('resourcegroups') + 1
-                resource_group = resource_parts[resource_group_idx]
-            except (ValueError, IndexError):
-                logging.error(f'Failed to extract resource group from resource ID: {resource_id}')
+            if len(resource_parts) < 9:
+                logging.error(f'Resource ID format invalid, expected at least 9 parts: {resource_id}')
                 return
 
-            container_name = resource_parts[-1]
+            try:
+                # Extract subscription ID (index 2)
+                if resource_parts[1].lower() != 'subscriptions':
+                    logging.error(f'Resource ID missing subscriptions segment: {resource_id}')
+                    return
+                subscription_id = resource_parts[2]
+
+                # Extract resource group
+                resource_group_idx = [p.lower() for p in resource_parts].index('resourcegroups') + 1
+                if resource_group_idx >= len(resource_parts):
+                    logging.error(f'Resource ID malformed, no resource group name: {resource_id}')
+                    return
+                resource_group = resource_parts[resource_group_idx]
+
+                # Extract container name (last segment)
+                container_name = resource_parts[-1]
+                if not container_name:
+                    logging.error(f'Resource ID missing container name: {resource_id}')
+                    return
+
+            except (ValueError, IndexError) as e:
+                logging.error(f'Failed to parse resource ID: {resource_id}, error: {e}')
+                return
 
             logging.info(f'Subscription: {subscription_id}')
             logging.info(f'Resource Group: {resource_group}')
@@ -149,7 +184,7 @@ def process_activity_log_record(record: dict):
             # Initialize scanner and storage
             # Using remote registry scanning (Option 3) - no container runtime needed!
             scanner = QScannerBinary(subscription_id=subscription_id)
-            storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
+            storage = StorageHandler()
 
             # Scan each image
             results = []

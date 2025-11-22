@@ -54,6 +54,7 @@ This scanner supports two deployment modes:
 - Central Event Hub receives Activity Log from all subscriptions
 - One function app scans containers from all subscriptions
 - Use `deploy-multi.sh` + `add-spoke.sh`
+- **Important**: All subscriptions must be in the same Azure AD tenant. See [MULTI_TENANT.md](MULTI_TENANT.md) for cross-tenant considerations.
 
 ## Deployment
 
@@ -240,14 +241,19 @@ az storage entity query \
 
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
-| `QUALYS_POD` | Qualys platform pod | From deployment |
-| `QUALYS_ACCESS_TOKEN` | Qualys token | From environment |
+| `QUALYS_POD` | Qualys platform pod (US1-US4, EU1-EU2, IN1, CA1, AE1, AU1, UK1) | From deployment |
+| `QUALYS_ACCESS_TOKEN` | Qualys token (stored in Key Vault) | From deployment |
 | `QSCANNER_VERSION` | qscanner version | `4.6.0-4` |
 | `SCAN_CACHE_HOURS` | Cache duration before rescanning | `24` |
 | `AZURE_TENANT_ID` | Azure AD tenant ID | Auto-configured |
 | `SCAN_TIMEOUT` | qscanner timeout in seconds | `1800` (30 min) |
+| `STORAGE_ACCOUNT_NAME` | Storage account name for managed identity auth | Auto-configured |
 
-**Note**: `AZURE_CLIENT_ID` is NOT required - the Azure SDK automatically uses the function app's system-assigned managed identity.
+**Authentication:**
+- Function app uses system-assigned managed identity (no credentials needed)
+- Qualys access token stored securely in Azure Key Vault
+- Event Hub connection string stored in Azure Key Vault
+- Storage access via managed identity with RBAC (no connection strings)
 
 Update via Azure Portal: Function App → Configuration → Application Settings
 
@@ -275,14 +281,19 @@ az functionapp restart --resource-group qualys-scanner-rg --name $FUNCTION_APP
 ### Update Qualys Token
 
 ```bash
-# Via infrastructure redeployment (preferred)
-./deploy.sh
+# Update Key Vault secret (recommended)
+KV_NAME=$(az keyvault list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+az keyvault secret set \
+  --vault-name $KV_NAME \
+  --name QualysAccessToken \
+  --value "<new-token>"
 
-# Or update environment variable directly
-az functionapp config appsettings set \
-  --resource-group qualys-scanner-rg \
-  --name $FUNCTION_APP \
-  --settings QUALYS_ACCESS_TOKEN="<new-token>"
+# Restart function app to pick up new secret
+FUNCTION_APP=$(az functionapp list --resource-group qualys-scanner-rg --query "[0].name" -o tsv)
+az functionapp restart --resource-group qualys-scanner-rg --name $FUNCTION_APP
+
+# Or redeploy infrastructure (updates Key Vault automatically)
+./deploy.sh
 ```
 
 ## Troubleshooting
@@ -404,25 +415,39 @@ az container create \
 - **Function Identity**: System-assigned managed identity
 - **Subscription Access**: Reader role (read-only access to container metadata)
 - **ACR Access**: AcrPull role (pull images via Azure SDK for remote scanning)
-- **Storage Access**: Connection string (future: migrate to managed identity)
-- **Qualys API**: Bearer token authentication
+- **Storage Access**: Managed identity with RBAC roles (no connection strings)
+- **Key Vault Access**: Managed identity with Key Vault Secrets User role
+- **Qualys API**: Bearer token authentication (token stored in Key Vault)
 
 ### RBAC Roles Required
 | Resource | Role | Scope | Purpose |
 |----------|------|-------|---------|
 | Subscription | Reader | Subscription | Read Activity Log, container metadata (read-only) |
 | Subscription | AcrPull | Subscription | Pull images from ACR registries for scanning |
-| Storage | Storage Table Data Contributor | Storage Account | Cache scan metadata |
+| Storage Account | Storage Blob Data Contributor | Storage Account | Write scan results to blob storage |
+| Storage Account | Storage Table Data Contributor | Storage Account | Cache scan metadata in table storage |
+| Key Vault | Key Vault Secrets User | Key Vault | Read Qualys token and Event Hub connection string |
 
 ### Network Security
 - **Event Hub**: Public access (limited to Azure services)
 - **Storage**: Public access (limited to Azure services)
 - **Function**: Outbound to Azure API, ACR, and Qualys API
+- **Key Vault**: RBAC-based access, soft delete enabled
 
 ### Data Protection
 - **Scan Metadata**: Cached in Table Storage (24 hours)
 - **Scan Results**: Uploaded directly to Qualys (not stored in Azure)
-- **Token Storage**: Environment variable (future: migrate to Key Vault)
+- **Secrets**: Qualys token and Event Hub connection stored in Key Vault
+- **Key Vault**: 90-day soft delete retention, RBAC authorization enabled
+
+### Security Best Practices Implemented
+- No connection strings or credentials in environment variables (all in Key Vault)
+- Managed identity for all Azure resource access
+- Least privilege RBAC assignments (Reader is read-only)
+- TLS 1.2 minimum on all resources
+- HTTPS-only function app
+- No public blob access
+- Soft delete enabled on Key Vault
 
 ## Cost Optimization
 

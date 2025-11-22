@@ -1,6 +1,19 @@
 param location string = resourceGroup().location
 
-@description('Qualys POD identifier (e.g., US2, US3, EU1)')
+@allowed([
+  'US1'
+  'US2'
+  'US3'
+  'US4'
+  'EU1'
+  'EU2'
+  'IN1'
+  'CA1'
+  'AE1'
+  'AU1'
+  'UK1'
+])
+@description('Qualys POD identifier')
 param qualysPod string
 
 @secure()
@@ -129,6 +142,14 @@ resource qualysAccessTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' 
   }
 }
 
+resource eventHubConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'EventHubConnectionString'
+  properties: {
+    value: activityLogHubPolicy.listKeys().primaryConnectionString
+  }
+}
+
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: appServicePlanName
   location: location
@@ -193,8 +214,8 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: subscription().tenantId
         }
         {
-          name: 'STORAGE_CONNECTION_STRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+          name: 'STORAGE_ACCOUNT_NAME'
+          value: storageAccountName
         }
         {
           name: 'SCAN_CACHE_HOURS'
@@ -214,7 +235,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'EVENTHUB_CONNECTION_STRING'
-          value: activityLogHubPolicy.listKeys().primaryConnectionString
+          value: '@Microsoft.KeyVault(SecretUri=${eventHubConnectionStringSecret.properties.secretUri})'
         }
         {
           name: 'EVENTHUB_NAME'
@@ -238,6 +259,26 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource storageBlobDataContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, functionApp.id, 'Storage Blob Data Contributor')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource storageTableDataContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, functionApp.id, 'Storage Table Data Contributor')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }

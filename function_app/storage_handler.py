@@ -9,24 +9,34 @@ from typing import Dict, Optional
 from azure.storage.blob import BlobServiceClient, BlobClient
 from azure.data.tables import TableServiceClient, TableEntity
 from azure.core.exceptions import ResourceNotFoundError
+from azure.identity import DefaultAzureCredential
 
 
 class StorageHandler:
     """
     Handles storage of scan results and tracking in Azure Storage
     Uses Blob Storage for detailed results and Table Storage for metadata
+    Uses managed identity for authentication
     """
 
-    def __init__(self, connection_string: str):
+    def __init__(self, storage_account_name: Optional[str] = None):
         """
-        Initialize storage handler
+        Initialize storage handler with managed identity
 
         Args:
-            connection_string: Azure Storage connection string
+            storage_account_name: Azure Storage account name.
+                                 If not provided, uses STORAGE_ACCOUNT_NAME env var.
         """
-        self.connection_string = connection_string
-        self.blob_service = BlobServiceClient.from_connection_string(connection_string)
-        self.table_service = TableServiceClient.from_connection_string(connection_string)
+        self.storage_account_name = storage_account_name or os.environ.get('STORAGE_ACCOUNT_NAME')
+        if not self.storage_account_name:
+            raise ValueError('Storage account name must be provided or set in STORAGE_ACCOUNT_NAME env var')
+
+        credential = DefaultAzureCredential()
+        blob_url = f'https://{self.storage_account_name}.blob.core.windows.net'
+        table_url = f'https://{self.storage_account_name}.table.core.windows.net'
+
+        self.blob_service = BlobServiceClient(account_url=blob_url, credential=credential)
+        self.table_service = TableServiceClient(endpoint=table_url, credential=credential)
 
         # Container and table names
         self.results_container = 'scan-results'
@@ -90,7 +100,7 @@ class StorageHandler:
                 'RowKey': scan_id,
                 'Image': image,
                 'ScanId': scan_id,
-                'Timestamp': timestamp,
+                'ScanTimestamp': timestamp,
                 'Status': result.get('status', 'UNKNOWN'),
                 'ContainerType': result.get('container_type', 'UNKNOWN'),
                 'VulnCritical': result.get('vulnerabilities', {}).get('CRITICAL', 0),
@@ -155,16 +165,24 @@ class StorageHandler:
 
             table_client = self.table_service.get_table_client(self.metadata_table)
             partition_key = self._sanitize_name(image)
-
-            # Query recent scans
             cutoff_time = datetime.utcnow() - timedelta(hours=hours)
 
-            query_filter = f"PartitionKey eq '{partition_key}' and Timestamp ge datetime'{cutoff_time.isoformat()}'"
-            entities = list(table_client.query_entities(query_filter=query_filter, select=['RowKey']))
+            # Query by partition key and check ScanTimestamp programmatically
+            # Table Storage OData filters don't support custom datetime comparisons reliably
+            query_filter = f"PartitionKey eq '{partition_key}'"
+            entities = table_client.query_entities(query_filter=query_filter, select=['RowKey', 'ScanTimestamp'])
 
-            if entities:
-                logging.info(f'Found {len(entities)} recent scans for {image}')
-                return True
+            for entity in entities:
+                scan_timestamp_str = entity.get('ScanTimestamp')
+                if scan_timestamp_str:
+                    try:
+                        scan_timestamp = datetime.fromisoformat(scan_timestamp_str.replace('Z', '+00:00'))
+                        if scan_timestamp >= cutoff_time:
+                            logging.info(f'Found recent scan for {image} at {scan_timestamp_str}')
+                            return True
+                    except (ValueError, AttributeError) as parse_error:
+                        logging.warning(f'Failed to parse ScanTimestamp: {scan_timestamp_str}, error: {parse_error}')
+                        continue
 
             return False
 

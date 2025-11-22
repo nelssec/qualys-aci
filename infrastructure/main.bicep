@@ -2,7 +2,23 @@ targetScope = 'subscription'
 
 param location string = 'eastus'
 param resourceGroupName string = 'qualys-scanner-rg'
+
+@allowed([
+  'US1'
+  'US2'
+  'US3'
+  'US4'
+  'EU1'
+  'EU2'
+  'IN1'
+  'CA1'
+  'AE1'
+  'AU1'
+  'UK1'
+])
+@description('Qualys POD identifier')
 param qualysPod string
+
 @secure()
 param qualysAccessToken string
 param scanCacheHours int = 24

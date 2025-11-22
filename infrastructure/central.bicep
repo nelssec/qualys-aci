@@ -6,7 +6,20 @@ param location string = 'eastus'
 @description('Resource group name for central scanner')
 param resourceGroupName string = 'qualys-scanner-rg'
 
-@description('Qualys POD identifier (e.g., US2, US3, EU1)')
+@allowed([
+  'US1'
+  'US2'
+  'US3'
+  'US4'
+  'EU1'
+  'EU2'
+  'IN1'
+  'CA1'
+  'AE1'
+  'AU1'
+  'UK1'
+])
+@description('Qualys POD identifier')
 param qualysPod string
 
 @secure()
