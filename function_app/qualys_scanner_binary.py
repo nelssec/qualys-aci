@@ -76,6 +76,45 @@ class QScannerBinary:
         logging.info('qscanner binary not found, downloading latest version...')
         return self._download_qscanner_binary(persistent_path)
 
+    def _safe_extract_tar(self, tar: 'tarfile.TarFile', extract_dir: str) -> None:
+        """
+        Safely extract tar archive with path traversal protection (CVE-2007-4559).
+
+        Args:
+            tar: Open tarfile object
+            extract_dir: Directory to extract to
+        """
+        extract_path = Path(extract_dir).resolve()
+
+        for member in tar.getmembers():
+            # Get the resolved path where this member would be extracted
+            member_path = (extract_path / member.name).resolve()
+
+            # Ensure the member path is within the extract directory
+            try:
+                member_path.relative_to(extract_path)
+            except ValueError:
+                logging.warning(f'Blocked path traversal attempt in tar: {member.name}')
+                raise Exception(f'Security violation: tar member {member.name} attempts path traversal')
+
+            # Block symbolic links that could point outside extract dir
+            if member.issym() or member.islnk():
+                link_target = Path(member.linkname)
+                if link_target.is_absolute():
+                    raise Exception(f'Security violation: absolute symlink in tar: {member.name}')
+                resolved_link = (extract_path / member.name).parent / link_target
+                try:
+                    resolved_link.resolve().relative_to(extract_path)
+                except ValueError:
+                    raise Exception(f'Security violation: symlink traversal in tar: {member.name}')
+
+            # Block special file types (devices, etc.)
+            if not (member.isfile() or member.isdir() or member.issym()):
+                logging.warning(f'Skipping special file type in tar: {member.name}')
+                continue
+
+            tar.extract(member, extract_dir)
+
     def _download_qscanner_binary(self, target_path: str) -> str:
         """
         Download qscanner binary from Qualys CASK CDN
@@ -105,10 +144,10 @@ class QScannerBinary:
             logging.info(f'Downloading archive to {tar_path}')
             urllib.request.urlretrieve(download_url, tar_path)
 
-            # Extract tar.gz
-            logging.info('Extracting qscanner binary from archive')
+            # Extract tar.gz with path traversal protection
+            logging.info('Extracting qscanner binary from archive (with security validation)')
             with tarfile.open(tar_path, 'r:gz') as tar:
-                tar.extractall(temp_dir)
+                self._safe_extract_tar(tar, temp_dir)
 
             # Move binary to target location
             binary_source = os.path.join(temp_dir, 'qscanner')
@@ -155,9 +194,10 @@ class QScannerBinary:
             # Create temp directory for extraction
             temp_dir = tempfile.mkdtemp()
 
-            logging.info(f'Extracting {targz_path} to temp directory')
+            logging.info(f'Extracting {targz_path} to temp directory (with security validation)')
             with tarfile.open(targz_path, 'r:gz') as tar:
-                tar.extractall(temp_dir)
+                # Use safe extraction with path traversal protection
+                self._safe_extract_tar(tar, temp_dir)
 
             # Find the binary in the extracted files
             binary_source = os.path.join(temp_dir, 'qscanner')

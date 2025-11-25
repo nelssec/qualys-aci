@@ -43,19 +43,32 @@ elif [ "$RG_STATE" != "NotFound" ]; then
   fi
 fi
 
-# Check for orphaned role assignments
+# Check for orphaned role assignments (Reader and AcrPull - the roles we actually use)
 echo "Checking for orphaned subscription-level role assignments..."
 SUB_ID=$(az account show --query id -o tsv)
-ORPHANED=$(az role assignment list \
-  --role "Contributor" \
+
+# Check for orphaned Reader role assignments (subscription-level)
+ORPHANED_READER=$(az role assignment list \
+  --role "Reader" \
   --scope "/subscriptions/$SUB_ID" \
-  --query "[?principalType=='ServicePrincipal' && principalName==null].id" -o tsv)
+  --query "[?principalType=='ServicePrincipal' && principalName==null].id" -o tsv 2>/dev/null || echo "")
+
+# Check for orphaned AcrPull role assignments (subscription-level)
+ORPHANED_ACRPULL=$(az role assignment list \
+  --role "AcrPull" \
+  --scope "/subscriptions/$SUB_ID" \
+  --query "[?principalType=='ServicePrincipal' && principalName==null].id" -o tsv 2>/dev/null || echo "")
+
+ORPHANED="$ORPHANED_READER $ORPHANED_ACRPULL"
+ORPHANED=$(echo "$ORPHANED" | xargs)  # Trim whitespace
 
 if [ ! -z "$ORPHANED" ]; then
   echo "Found orphaned role assignments, cleaning up..."
   for assignment in $ORPHANED; do
-    echo "  Deleting: $assignment"
-    az role assignment delete --ids "$assignment" 2>/dev/null || true
+    if [ ! -z "$assignment" ]; then
+      echo "  Deleting: $assignment"
+      az role assignment delete --ids "$assignment" 2>/dev/null || true
+    fi
   done
   echo "Cleanup complete!"
 else

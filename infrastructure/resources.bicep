@@ -112,11 +112,21 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enabledForDiskEncryption: false
     enabledForTemplateDeployment: true
     enableRbacAuthorization: true
+    // Soft delete enabled - secrets recoverable for 90 days after deletion
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
+    // Purge protection - CRITICAL for enterprise: prevents permanent deletion even by admins
+    // Once enabled, cannot be disabled. Secrets must wait full retention period before permanent deletion.
+    enablePurgeProtection: true
     networkAcls: {
+      // Allow Azure services to access Key Vault (required for Function App managed identity)
       bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      // Default deny - only Azure services and explicitly allowed IPs can access
+      defaultAction: 'Deny'
+      // IP rules can be added here for admin access if needed
+      ipRules: []
+      // Virtual network rules can be added here for VNet integration
+      virtualNetworkRules: []
     }
   }
 }

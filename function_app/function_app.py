@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 import azure.functions as func
 from datetime import datetime
 
@@ -10,6 +11,62 @@ from image_parser import ImageParser
 from storage_handler import StorageHandler
 
 app = func.FunctionApp()
+
+
+# Security constants for input validation
+# Azure container name constraints: 1-63 chars, lowercase alphanumeric and hyphens, can't start/end with hyphen
+CONTAINER_NAME_PATTERN = re.compile(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
+# Azure resource group constraints: 1-90 chars, alphanumeric, underscores, hyphens, periods, parentheses
+RESOURCE_GROUP_PATTERN = re.compile(r'^[-\w\._\(\)]{1,90}$')
+# Azure subscription ID: GUID format
+SUBSCRIPTION_ID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+
+def validate_container_name(name: str) -> bool:
+    """
+    Validate container name follows Azure naming conventions.
+    Defense-in-depth validation even though Activity Log is a trusted source.
+
+    Args:
+        name: Container name to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not name or len(name) > 63:
+        return False
+    # Allow uppercase since Azure APIs may return mixed case
+    return bool(CONTAINER_NAME_PATTERN.match(name.lower()))
+
+
+def validate_resource_group(name: str) -> bool:
+    """
+    Validate resource group name follows Azure naming conventions.
+
+    Args:
+        name: Resource group name to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not name or len(name) > 90:
+        return False
+    return bool(RESOURCE_GROUP_PATTERN.match(name))
+
+
+def validate_subscription_id(sub_id: str) -> bool:
+    """
+    Validate subscription ID is a valid GUID format.
+
+    Args:
+        sub_id: Subscription ID to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not sub_id:
+        return False
+    return bool(SUBSCRIPTION_ID_PATTERN.match(sub_id))
 
 
 def fetch_container_images(subscription_id: str, resource_group: str, container_name: str, container_type: str) -> list:
@@ -129,8 +186,21 @@ def process_activity_log_record(record: dict):
             logging.info(f'Resource Group: {resource_group}')
             logging.info(f'Container Name: {container_name}')
 
+            # Input validation (defense-in-depth even for trusted Activity Log source)
+            if not validate_subscription_id(subscription_id):
+                logging.error(f'SECURITY: Invalid subscription ID format: {subscription_id}')
+                return
+
+            if not validate_resource_group(resource_group):
+                logging.error(f'SECURITY: Invalid resource group name format: {resource_group}')
+                return
+
+            if not validate_container_name(container_name):
+                logging.error(f'SECURITY: Invalid container name format: {container_name}')
+                return
+
             # Skip qscanner containers to prevent infinite loops
-            if container_name.startswith('qscanner-'):
+            if container_name.lower().startswith('qscanner-'):
                 logging.info(f'SKIPPED: qscanner container (prevents infinite loop)')
                 return
 

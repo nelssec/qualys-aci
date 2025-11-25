@@ -156,10 +156,11 @@ class StorageHandler:
             table_client = self.table_service.get_table_client(self.metadata_table)
             partition_key = self._sanitize_name(image)
 
-            # Query recent scans
+            # Query recent scans with proper OData escaping to prevent injection
             cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+            escaped_partition_key = self._escape_odata_string(partition_key)
 
-            query_filter = f"PartitionKey eq '{partition_key}' and Timestamp ge datetime'{cutoff_time.isoformat()}'"
+            query_filter = f"PartitionKey eq '{escaped_partition_key}' and Timestamp ge datetime'{cutoff_time.isoformat()}'"
             entities = list(table_client.query_entities(query_filter=query_filter, select=['RowKey']))
 
             if entities:
@@ -180,10 +181,26 @@ class StorageHandler:
             name: Original name
 
         Returns:
-            Sanitized name
+            Sanitized name safe for storage keys and OData queries
         """
         # Replace special characters with underscores
         sanitized = name.replace('/', '_').replace(':', '_').replace('@', '_')
-        # Remove any remaining invalid characters
+        # Remove any remaining invalid characters (allow only alphanumeric, dash, underscore, dot)
         sanitized = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in sanitized)
+        # Truncate to max partition key length (1KB = 1024 chars, but we use 512 for safety)
+        sanitized = sanitized[:512]
         return sanitized
+
+    def _escape_odata_string(self, value: str) -> str:
+        """
+        Escape a string value for safe use in OData filter expressions.
+        Prevents OData injection attacks.
+
+        Args:
+            value: The string value to escape
+
+        Returns:
+            Escaped string safe for OData query filters
+        """
+        # OData escapes single quotes by doubling them
+        return value.replace("'", "''")
