@@ -2,9 +2,24 @@ targetScope = 'subscription'
 
 param location string = 'eastus'
 param resourceGroupName string = 'qualys-scanner-rg'
-param qualysPod string
+
+@description('Qualys Gateway URL for your POD')
+param qualysGatewayUrl string = 'https://gateway.qg2.apps.qualys.com'
+
 @secure()
-param qualysAccessToken string
+@description('Qualys API Bearer Token')
+param qualysApiToken string
+
+@description('Name for the ACR connector in Qualys')
+param acrConnectorName string = 'qualys-aci-connector'
+
+@description('Service Principal Application (Client) ID for ACR access')
+param acrApplicationId string
+
+@secure()
+@description('Service Principal Client Secret for ACR access')
+param acrClientSecret string
+
 param scanCacheHours int = 24
 param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
@@ -19,8 +34,11 @@ module resources 'resources.bicep' = {
   name: 'qualys-scanner-resources'
   params: {
     location: location
-    qualysPod: qualysPod
-    qualysAccessToken: qualysAccessToken
+    qualysGatewayUrl: qualysGatewayUrl
+    qualysApiToken: qualysApiToken
+    acrConnectorName: acrConnectorName
+    acrApplicationId: acrApplicationId
+    acrClientSecret: acrClientSecret
     scanCacheHours: scanCacheHours
     functionAppSku: functionAppSku
     functionPackageUrl: functionPackageUrl
@@ -28,8 +46,7 @@ module resources 'resources.bicep' = {
 }
 
 // Grant Reader role at subscription level for reading container metadata
-// This is the minimum permission needed to read ACI and ACA container details
-// Reader role only allows READ operations - no create/update/delete permissions
+// Required to fetch ACI/ACA container details via Azure Management API
 resource readerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(subscription().id, rg.id, 'Reader')
   properties: {
@@ -39,16 +56,8 @@ resource readerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
-// Grant AcrPull role at subscription level for remote registry scanning
-// This allows QScanner to pull images from any ACR in the subscription
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, rg.id, 'AcrPull')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-    principalId: resources.outputs.functionAppPrincipalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// Note: AcrPull role is NOT needed here because Qualys uses the Service Principal
+// to pull images directly. The Service Principal should have AcrPull on relevant ACRs.
 
 resource activityLogDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name: 'activity-log-to-eventhub'

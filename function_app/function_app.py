@@ -1,100 +1,86 @@
+"""
+Qualys Container Scanner for Azure ACI/ACA
+
+Event-driven scanning using Qualys Registry API.
+Triggers on ACI/ACA deployments via Activity Log -> Event Hub.
+"""
+
 import os
 import json
 import logging
 import azure.functions as func
 from datetime import datetime
 
-# Import helper modules
-from qualys_scanner_binary import QScannerBinary
 from image_parser import ImageParser
 from storage_handler import StorageHandler
+from qualys_api import (
+    get_or_create_registry,
+    submit_on_demand_scan,
+    get_image_scan_status,
+    get_image_vulnerabilities
+)
 
 app = func.FunctionApp()
 
+# Configuration
+QUALYS_GATEWAY_URL = os.environ.get('QUALYS_GATEWAY_URL', 'https://gateway.qg2.apps.qualys.com')
+QUALYS_API_TOKEN = os.environ.get('QUALYS_API_TOKEN')
+ACR_CONNECTOR_NAME = os.environ.get('ACR_CONNECTOR_NAME', 'qualys-aci-connector')
+ACR_APPLICATION_ID = os.environ.get('ACR_APPLICATION_ID')  # Service Principal App ID
+ACR_CLIENT_SECRET = os.environ.get('ACR_CLIENT_SECRET')  # Service Principal Secret
 
-def fetch_container_images(subscription_id: str, resource_group: str, container_name: str, container_type: str) -> list:
-    """Fetch container images from Azure management API"""
+
+def fetch_container_images(subscription_id: str, resource_group: str,
+                           container_name: str, container_type: str) -> list:
+    """Fetch container images from Azure Management API."""
     images = []
 
     try:
-        logging.info(f'API FETCH: Importing Azure SDK libraries')
+        logging.info(f'Fetching {container_type} container: {container_name} in {resource_group}')
+
         from azure.identity import DefaultAzureCredential
-        from azure.mgmt.containerinstance import ContainerInstanceManagementClient
-
-        logging.info(f'API FETCH: Authenticating with Azure using managed identity')
-        logging.info(f'  Target: {container_type} container {container_name} in {resource_group}')
-        logging.info(f'  Subscription: {subscription_id}')
-
         credential = DefaultAzureCredential()
 
         if container_type == 'ACI':
-            logging.info(f'API FETCH: Creating ACI management client')
-            aci_client = ContainerInstanceManagementClient(credential, subscription_id)
+            from azure.mgmt.containerinstance import ContainerInstanceManagementClient
+            client = ContainerInstanceManagementClient(credential, subscription_id)
+            container_group = client.container_groups.get(resource_group, container_name)
 
-            logging.info(f'API FETCH: Calling container_groups.get()')
-            container_group = aci_client.container_groups.get(resource_group, container_name)
+            logging.info(f'Retrieved ACI: {container_group.name}, state={container_group.provisioning_state}')
 
-            logging.info(f'API FETCH SUCCESS: Retrieved container group {container_group.name}')
-            logging.info(f'  Provisioning State: {container_group.provisioning_state}')
-            logging.info(f'  Number of containers: {len(container_group.containers)}')
-
-            for idx, container in enumerate(container_group.containers):
+            for container in container_group.containers:
                 if container.image:
-                    logging.info(f'  Container {idx + 1}: name={container.name}, image={container.image}')
+                    logging.info(f'  Container: {container.name}, image={container.image}')
                     images.append(container.image)
-                else:
-                    logging.warning(f'  Container {idx + 1}: name={container.name} has no image')
 
         elif container_type == 'ACA':
-            logging.info(f'API FETCH: Creating ACA management client')
             from azure.mgmt.appcontainers import ContainerAppsAPIClient
+            client = ContainerAppsAPIClient(credential, subscription_id)
+            container_app = client.container_apps.get(resource_group, container_name)
 
-            aca_client = ContainerAppsAPIClient(credential, subscription_id)
+            logging.info(f'Retrieved ACA: {container_app.name}, state={container_app.provisioning_state}')
 
-            logging.info(f'API FETCH: Calling container_apps.get()')
-            container_app = aca_client.container_apps.get(resource_group, container_name)
-
-            logging.info(f'API FETCH SUCCESS: Retrieved container app {container_app.name}')
-            logging.info(f'  Provisioning State: {container_app.provisioning_state}')
-
-            # Extract images from container app template
             if container_app.template and container_app.template.containers:
-                logging.info(f'  Number of containers: {len(container_app.template.containers)}')
-                for idx, container in enumerate(container_app.template.containers):
+                for container in container_app.template.containers:
                     if container.image:
-                        logging.info(f'  Container {idx + 1}: name={container.name}, image={container.image}')
+                        logging.info(f'  Container: {container.name}, image={container.image}')
                         images.append(container.image)
-                    else:
-                        logging.warning(f'  Container {idx + 1}: name={container.name} has no image')
-            else:
-                logging.warning('  No containers found in template')
 
     except Exception as e:
-        logging.error(f'API FETCH ERROR: Failed to retrieve container images from Azure')
-        logging.error(f'  Error type: {type(e).__name__}')
-        logging.error(f'  Error message: {str(e)}')
-        import traceback
-        logging.error(f'  Traceback: {traceback.format_exc()}')
+        logging.error(f'Failed to fetch container images: {type(e).__name__}: {str(e)}')
 
     return images
 
 
-def extract_resource_group(subject: str) -> str:
-    """Extract resource group name from Azure resource URI (case-insensitive)"""
-    try:
-        parts = subject.split('/')
-        parts_lower = [p.lower() for p in parts]
-        rg_index = parts_lower.index('resourcegroups') + 1
-        return parts[rg_index]
-    except Exception as e:
-        logging.error(f'Failed to extract resource group from subject: {subject}, error: {e}')
-        return 'unknown'
+def is_acr_image(registry: str) -> bool:
+    """Check if image is from Azure Container Registry."""
+    return registry.endswith('.azurecr.io')
 
 
 def process_activity_log_record(record: dict):
-    """Process a single Activity Log record from diagnostic settings"""
+    """Process a single Activity Log record."""
     try:
-        # Extract event details from diagnostic settings format
+        # Extract event details
         operation_name = record.get('operationName', {})
         if isinstance(operation_name, dict):
             operation_name = operation_name.get('value', '')
@@ -102,124 +88,136 @@ def process_activity_log_record(record: dict):
         result_type = record.get('resultType', '') or record.get('status', {}).get('value', '')
         resource_id = record.get('resourceId', '')
 
-        logging.info(f'Record: operation={operation_name}, result={result_type}, resource={resource_id}')
+        logging.info(f'Record: operation={operation_name}, result={result_type}')
 
-        # Check if this is a successful container creation event (ACI or ACA)
+        # Check for container creation events
         is_aci = 'CONTAINERINSTANCE/CONTAINERGROUPS/WRITE' in operation_name.upper()
         is_aca = 'APP/CONTAINERAPPS/WRITE' in operation_name.upper()
 
-        if (is_aci or is_aca) and result_type.upper() in ['SUCCESS', 'SUCCEEDED']:
-            container_type = 'ACI' if is_aci else 'ACA'
-            logging.info(f'EVENT MATCHED: {container_type} container creation detected')
+        if not (is_aci or is_aca) or result_type.upper() not in ['SUCCESS', 'SUCCEEDED']:
+            logging.debug('Not a container creation event, skipping')
+            return
 
-            # Parse resource ID to extract subscription, resource group, and container name
-            resource_parts = resource_id.split('/')
-            subscription_id = resource_parts[2] if len(resource_parts) > 2 else None
+        container_type = 'ACI' if is_aci else 'ACA'
+        logging.info(f'Container creation detected: {container_type}')
 
+        # Parse resource ID
+        resource_parts = resource_id.split('/')
+        subscription_id = resource_parts[2] if len(resource_parts) > 2 else None
+
+        try:
+            rg_idx = [p.lower() for p in resource_parts].index('resourcegroups') + 1
+            resource_group = resource_parts[rg_idx]
+        except (ValueError, IndexError):
+            logging.error(f'Failed to extract resource group from: {resource_id}')
+            return
+
+        container_name = resource_parts[-1]
+
+        logging.info(f'Subscription: {subscription_id}')
+        logging.info(f'Resource Group: {resource_group}')
+        logging.info(f'Container: {container_name}')
+
+        # Fetch container images
+        images = fetch_container_images(subscription_id, resource_group, container_name, container_type)
+
+        if not images:
+            logging.warning('No container images found')
+            return
+
+        logging.info(f'Found {len(images)} images to scan')
+
+        # Initialize storage for caching
+        storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
+
+        # Process each image
+        for image in images:
             try:
-                resource_group_idx = [p.lower() for p in resource_parts].index('resourcegroups') + 1
-                resource_group = resource_parts[resource_group_idx]
-            except (ValueError, IndexError):
-                logging.error(f'Failed to extract resource group from resource ID: {resource_id}')
-                return
-
-            container_name = resource_parts[-1]
-
-            logging.info(f'Subscription: {subscription_id}')
-            logging.info(f'Resource Group: {resource_group}')
-            logging.info(f'Container Name: {container_name}')
-
-            # Skip qscanner containers to prevent infinite loops
-            if container_name.startswith('qscanner-'):
-                logging.info(f'SKIPPED: qscanner container (prevents infinite loop)')
-                return
-
-            # Fetch container details from Azure
-            logging.info('FETCHING: Container details from Azure Management API')
-            images = fetch_container_images(subscription_id, resource_group, container_name, container_type)
-
-            if not images:
-                logging.warning('NO IMAGES: No container images found')
-                return
-
-            logging.info(f'FOUND: {len(images)} container images to scan')
-            for idx, img in enumerate(images):
-                logging.info(f'  Image {idx + 1}: {img}')
-
-            # Initialize scanner and storage
-            # Using remote registry scanning (Option 3) - no container runtime needed!
-            scanner = QScannerBinary(subscription_id=subscription_id)
-            storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
-
-            # Scan each image
-            results = []
-            for idx, image in enumerate(images):
-                logging.info(f'SCANNING IMAGE {idx + 1}/{len(images)}: {image}')
-
-                try:
-                    image_info = ImageParser.parse(image)
-                    logging.info(f'  Parsed: registry={image_info.get("registry")}, repo={image_info.get("repository")}, tag={image_info.get("tag")}')
-
-                    if storage.is_recently_scanned(image_info['full_name']):
-                        logging.info(f'  CACHED: Image recently scanned')
-                        continue
-
-                    # Custom tags for tracking
-                    custom_tags = {
-                        'azure_resource_id': resource_id,
-                        'container_type': container_type,
-                        'scan_method': 'remote_registry'
-                    }
-
-                    scan_result = scanner.scan_image(
-                        registry=image_info['registry'],
-                        repository=image_info['repository'],
-                        tag=image_info['tag'],
-                        digest=image_info.get('digest'),
-                        custom_tags=custom_tags
-                    )
-
-                    logging.info(f'  SCAN COMPLETED: scan_id={scan_result.get("scan_id")}')
-                    logging.info(f'  Status: {scan_result.get("status")}')
-
-                    vulnerabilities = scan_result.get('vulnerabilities', {})
-                    logging.info(f'  Vulnerabilities: Critical={vulnerabilities.get("CRITICAL", 0)}, High={vulnerabilities.get("HIGH", 0)}')
-
-                    result_record = {
-                        'timestamp': datetime.utcnow().isoformat(),
-                        'container_type': container_type,
-                        'image': image,
-                        'resource_id': resource_id,
-                        'scan_id': scan_result.get('scan_id'),
-                        'status': scan_result.get('status'),
-                        'vulnerabilities': vulnerabilities,
-                        'scan_method': 'remote_registry'
-                    }
-
-                    storage.save_scan_result(result_record)
-                    results.append(result_record)
-                    logging.info(f'  SAVED: Scan submission recorded')
-
-                except Exception as img_error:
-                    logging.error(f'SCAN ERROR: Failed to process image {image}')
-                    logging.error(f'  Error: {str(img_error)}')
-                    import traceback
-                    logging.error(f'  Traceback: {traceback.format_exc()}')
-                    storage.save_error({
-                        'timestamp': datetime.utcnow().isoformat(),
-                        'image': image,
-                        'error': str(img_error),
-                        'resource_id': resource_id
-                    })
-
-            logging.info(f'PROCESSING COMPLETE: Successfully processed {len(results)} images')
-        else:
-            logging.debug(f'EVENT SKIPPED: Not a container creation event')
+                process_image(image, resource_id, container_type, storage)
+            except Exception as img_error:
+                logging.error(f'Failed to process image {image}: {str(img_error)}')
+                storage.save_error({
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'image': image,
+                    'error': str(img_error),
+                    'resource_id': resource_id
+                })
 
     except Exception as e:
-        logging.error(f'ERROR processing activity log record: {str(e)}')
+        logging.error(f'Error processing activity log record: {str(e)}')
         import traceback
-        logging.error(f'Traceback: {traceback.format_exc()}')
+        logging.error(traceback.format_exc())
+
+
+def process_image(image: str, resource_id: str, container_type: str, storage: StorageHandler):
+    """Process a single container image for scanning."""
+    logging.info(f'Processing image: {image}')
+
+    # Parse image
+    image_info = ImageParser.parse(image)
+    registry = image_info['registry']
+    repository = image_info['repository']
+    tag = image_info['tag']
+
+    logging.info(f'Parsed: registry={registry}, repo={repository}, tag={tag}')
+
+    # Only scan ACR images (we need the connector for auth)
+    if not is_acr_image(registry):
+        logging.info(f'Skipping non-ACR image: {registry}')
+        return
+
+    # Check cache
+    if storage.is_recently_scanned(image_info['full_name']):
+        logging.info('Image recently scanned, skipping')
+        return
+
+    # Get or create registry in Qualys
+    registry_name = f"acr-{registry.split('.')[0]}"  # e.g., acr-myacr
+
+    registry_result = get_or_create_registry(
+        gateway_url=QUALYS_GATEWAY_URL,
+        token=QUALYS_API_TOKEN,
+        registry_name=registry_name,
+        acr_login_server=registry,
+        connector_name=ACR_CONNECTOR_NAME,
+        application_id=ACR_APPLICATION_ID,
+        client_secret=ACR_CLIENT_SECRET
+    )
+
+    if not registry_result.get('registry_uuid'):
+        raise Exception(f"Failed to get/create registry: {registry_result.get('error')}")
+
+    registry_uuid = registry_result['registry_uuid']
+    logging.info(f'Registry UUID: {registry_uuid[:8]}...')
+
+    # Submit scan
+    scan_result = submit_on_demand_scan(
+        gateway_url=QUALYS_GATEWAY_URL,
+        token=QUALYS_API_TOKEN,
+        registry_uuid=registry_uuid,
+        repo_name=repository,
+        image_tag=tag
+    )
+
+    if not scan_result.get('success'):
+        raise Exception(f"Failed to submit scan: HTTP {scan_result.get('status_code')}")
+
+    logging.info(f'Scan submitted: {scan_result.get("schedule_name")}')
+
+    # Save scan submission record
+    result_record = {
+        'timestamp': datetime.utcnow().isoformat(),
+        'container_type': container_type,
+        'image': image,
+        'resource_id': resource_id,
+        'scan_id': scan_result.get('schedule_name'),
+        'status': 'SUBMITTED',
+        'registry_uuid': registry_uuid,
+        'scan_method': 'registry_api'
+    }
+
+    storage.save_scan_result(result_record)
+    logging.info('Scan submission recorded')
 
 
 @app.function_name(name="ActivityLogProcessor")
@@ -230,28 +228,26 @@ def process_activity_log_record(record: dict):
     cardinality=func.Cardinality.ONE
 )
 def activity_log_processor(event: func.EventHubEvent):
-    """Process Activity Log events from Event Hub for container deployments"""
-    logging.info('ACTIVITY LOG EVENT: Function triggered')
+    """Process Activity Log events from Event Hub for container deployments."""
+    logging.info('Activity Log event received')
 
     try:
         event_body = event.get_body().decode('utf-8')
         event_data = json.loads(event_body)
 
-        # Activity Log events from diagnostic settings come wrapped in a 'records' array
+        # Activity Log events come wrapped in 'records' array
         records = event_data.get('records', [])
         if not records:
-            logging.warning('No records found in event')
+            logging.warning('No records in event')
             return
 
         logging.info(f'Processing {len(records)} Activity Log records')
 
-        # Process each record in the batch
         for record in records:
             process_activity_log_record(record)
 
     except Exception as e:
-        logging.error(f'CRITICAL ERROR: Activity log processing failed')
-        logging.error(f'  Error: {str(e)}')
+        logging.error(f'Activity log processing failed: {str(e)}')
         import traceback
-        logging.error(f'  Traceback: {traceback.format_exc()}')
+        logging.error(traceback.format_exc())
         raise

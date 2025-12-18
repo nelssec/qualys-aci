@@ -1,11 +1,21 @@
 param location string = resourceGroup().location
 
-@description('Qualys POD identifier (e.g., US2, US3, EU1)')
-param qualysPod string
+@description('Qualys Gateway URL for your POD')
+param qualysGatewayUrl string = 'https://gateway.qg2.apps.qualys.com'
 
 @secure()
-@description('Qualys API access token for container scanning')
-param qualysAccessToken string
+@description('Qualys API Bearer Token')
+param qualysApiToken string
+
+@description('Name for the ACR connector in Qualys')
+param acrConnectorName string = 'qualys-aci-connector'
+
+@description('Service Principal Application (Client) ID for ACR access')
+param acrApplicationId string
+
+@secure()
+@description('Service Principal Client Secret for ACR access')
+param acrClientSecret string
 
 @minValue(1)
 @maxValue(168)
@@ -25,16 +35,13 @@ param scanCacheHours int = 24
   'P2v4'
   'P3v4'
 ])
-@description('Function App SKU. Y1=Consumption (requires Y1 VM quota), EP=ElasticPremium, P=Premium')
+@description('Function App SKU. Y1=Consumption, EP=ElasticPremium, P=Premium')
 param functionAppSku string = 'Y1'
 
 @description('URL to function app deployment package (zip file). Leave empty to skip automatic deployment.')
 param functionPackageUrl string = ''
 
-// Resource naming with Azure constraints
-// Storage: 3-24 chars, alphanumeric only (qscan=5 + uniqueString=13 = 18 chars)
-// Key Vault: 3-24 chars, alphanumeric and hyphens (qskv=4 + uniqueString=13 = 17 chars)
-// uniqueString always generates exactly 13 characters
+// Resource naming
 var storageAccountName = 'qscan${uniqueString(resourceGroup().id)}'
 var functionAppName = 'qscan-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = 'qscan-plan-${uniqueString(resourceGroup().id)}'
@@ -121,11 +128,19 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource qualysAccessTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource qualysApiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
-  name: 'QualysAccessToken'
+  name: 'QualysApiToken'
   properties: {
-    value: qualysAccessToken
+    value: qualysApiToken
+  }
+}
+
+resource acrClientSecretKV 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'AcrClientSecret'
+  properties: {
+    value: acrClientSecret
   }
 }
 
@@ -177,12 +192,24 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: appInsights.properties.ConnectionString
         }
         {
-          name: 'QUALYS_POD'
-          value: qualysPod
+          name: 'QUALYS_GATEWAY_URL'
+          value: qualysGatewayUrl
         }
         {
-          name: 'QUALYS_ACCESS_TOKEN'
-          value: '@Microsoft.KeyVault(SecretUri=${qualysAccessTokenSecret.properties.secretUri})'
+          name: 'QUALYS_API_TOKEN'
+          value: '@Microsoft.KeyVault(SecretUri=${qualysApiTokenSecret.properties.secretUri})'
+        }
+        {
+          name: 'ACR_CONNECTOR_NAME'
+          value: acrConnectorName
+        }
+        {
+          name: 'ACR_APPLICATION_ID'
+          value: acrApplicationId
+        }
+        {
+          name: 'ACR_CLIENT_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${acrClientSecretKV.properties.secretUri})'
         }
         {
           name: 'AZURE_SUBSCRIPTION_ID'
@@ -199,10 +226,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'SCAN_CACHE_HOURS'
           value: string(scanCacheHours)
-        }
-        {
-          name: 'SCAN_TIMEOUT'
-          value: '1800'
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
