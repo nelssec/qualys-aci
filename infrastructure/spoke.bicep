@@ -8,10 +8,34 @@ param eventHubName string = 'activity-log'
 param eventHubSendConnectionString string
 param functionAppPrincipalId string
 
-resource readerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, centralSubscriptionId, 'Reader')
+// Custom role: Minimal permissions to read ACI and ACA container metadata
+resource containerReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
+  name: guid(subscription().id, 'qualys-container-reader')
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
+    roleName: 'Qualys Container Reader'
+    description: 'Read-only access to ACI container groups and ACA container apps for vulnerability scanning'
+    type: 'CustomRole'
+    assignableScopes: [subscription().id]
+    permissions: [
+      {
+        actions: [
+          'Microsoft.ContainerInstance/containerGroups/read'
+          'Microsoft.App/containerApps/read'
+          'Microsoft.Resources/subscriptions/resourceGroups/read'
+        ]
+        notActions: []
+        dataActions: []
+        notDataActions: []
+      }
+    ]
+  }
+}
+
+// Assign custom role to central function app
+resource containerReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, centralSubscriptionId, 'QualysContainerReader')
+  properties: {
+    roleDefinitionId: containerReaderRole.id
     principalId: functionAppPrincipalId
     principalType: 'ServicePrincipal'
   }

@@ -15,16 +15,19 @@ QUALYS_API_TOKEN = os.environ.get('QUALYS_API_TOKEN')
 ACR_CONNECTOR_NAME = os.environ.get('ACR_CONNECTOR_NAME', 'qualys-aci-connector')
 ACR_APPLICATION_ID = os.environ.get('ACR_APPLICATION_ID')
 ACR_CLIENT_SECRET = os.environ.get('ACR_CLIENT_SECRET')
-SERVICEBUS_CONNECTION_STRING = os.environ.get('SERVICEBUS_CONNECTION_STRING')
+SERVICEBUS_NAMESPACE = os.environ.get('SERVICEBUS_FULLYQUALIFIEDNAMESPACE')
 SERVICEBUS_QUEUE_NAME = os.environ.get('SERVICEBUS_QUEUE_NAME', 'scan-notifications')
 
 
 def send_notification(message: dict):
-    if not SERVICEBUS_CONNECTION_STRING:
+    if not SERVICEBUS_NAMESPACE:
         return
     try:
+        from azure.identity import DefaultAzureCredential
         from azure.servicebus import ServiceBusClient, ServiceBusMessage
-        with ServiceBusClient.from_connection_string(SERVICEBUS_CONNECTION_STRING) as client:
+
+        credential = DefaultAzureCredential()
+        with ServiceBusClient(SERVICEBUS_NAMESPACE, credential) as client:
             with client.get_queue_sender(SERVICEBUS_QUEUE_NAME) as sender:
                 sender.send_messages(ServiceBusMessage(json.dumps(message)))
         logging.info(f'Notification sent: {message.get("type")}')
@@ -102,7 +105,7 @@ def process_activity_log_record(record: dict):
             return
 
         logging.info(f'Found {len(images)} images to scan')
-        storage = StorageHandler(connection_string=os.environ['STORAGE_CONNECTION_STRING'])
+        storage = StorageHandler()
 
         for image in images:
             try:
@@ -194,8 +197,8 @@ def process_image(image: str, resource_id: str, container_type: str, storage: St
 @app.function_name(name="ActivityLogProcessor")
 @app.event_hub_message_trigger(
     arg_name="event",
-    event_hub_name="activity-log",
-    connection="EVENTHUB_CONNECTION_STRING",
+    event_hub_name="%EVENTHUB_NAME%",
+    connection="EVENTHUB_FULLYQUALIFIEDNAMESPACE",
     cardinality=func.Cardinality.ONE
 )
 def activity_log_processor(event: func.EventHubEvent):

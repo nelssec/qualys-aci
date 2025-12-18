@@ -1,17 +1,18 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "AzureWebJobsStorage__accountName": "<storage-account-name>",
     "FUNCTIONS_WORKER_RUNTIME": "python",
-    "EVENTHUB_CONNECTION_STRING": "<event-hub-connection-string>",
-    "STORAGE_CONNECTION_STRING": "<storage-account-connection-string>",
+    "EVENTHUB_FULLYQUALIFIEDNAMESPACE": "<namespace>.servicebus.windows.net",
+    "EVENTHUB_NAME": "activity-log",
+    "STORAGE_ACCOUNT_NAME": "<storage-account-name>",
     "QUALYS_GATEWAY_URL": "https://gateway.qg2.apps.qualys.com",
     "QUALYS_API_TOKEN": "<qualys-api-token>",
     "ACR_CONNECTOR_NAME": "qualys-aci-connector",
     "ACR_APPLICATION_ID": "<service-principal-app-id>",
     "ACR_CLIENT_SECRET": "<service-principal-secret>",
     "SCAN_CACHE_HOURS": "24",
-    "SERVICEBUS_CONNECTION_STRING": "<service-bus-connection-string>",
+    "SERVICEBUS_FULLYQUALIFIEDNAMESPACE": "<namespace>.servicebus.windows.net",
     "SERVICEBUS_QUEUE_NAME": "scan-notifications"
   }
 }

@@ -339,11 +339,12 @@ response = requests.post(
 
 ### Notifications
 
-Service Bus delivers scan notifications for downstream processing:
+Service Bus delivers scan notifications using Managed Identity:
 
 ```python
 def send_notification(message):
-    with ServiceBusClient.from_connection_string(connection_string) as client:
+    credential = DefaultAzureCredential()
+    with ServiceBusClient(namespace, credential) as client:
         with client.get_queue_sender(queue_name) as sender:
             sender.send_messages(ServiceBusMessage(json.dumps(message)))
 ```
@@ -387,14 +388,51 @@ Before deploying, ensure you have:
 
 ## Security Considerations
 
-The architecture implements defense in depth:
+The architecture implements defense in depth following Azure security best practices:
 
-- **Service Principal for ACR**: No static credentials stored in Qualys—only Service Principal auth
-- **Key Vault integration**: Qualys API token and SP secret stored in Key Vault
-- **Managed Identity**: Function App uses system-assigned identity for Azure resource access
-- **Least privilege**: Function has Reader role (not Contributor) at subscription level
-- **Table Storage caching**: Prevents scan flooding with configurable TTL
-- **Network isolation**: All Azure resources use HTTPS endpoints
+### Managed Identity Everywhere
+
+All Azure service authentication uses Managed Identity with RBAC—no connection strings or SAS tokens:
+
+| Resource | Role | Purpose |
+|----------|------|---------|
+| Storage Account | Storage Blob Data Owner | Scan results storage |
+| Storage Account | Storage Table Data Contributor | Cache metadata |
+| Event Hub | Azure Event Hubs Data Receiver | Function trigger |
+| Service Bus | Azure Service Bus Data Sender | Notifications |
+| Key Vault | Key Vault Secrets User | Access secrets |
+
+### Custom Role for Minimal Permissions
+
+Instead of the broad `Reader` role, a custom role grants only the permissions needed:
+
+```bicep
+permissions: [
+  {
+    actions: [
+      'Microsoft.ContainerInstance/containerGroups/read'
+      'Microsoft.App/containerApps/read'
+      'Microsoft.Resources/subscriptions/resourceGroups/read'
+    ]
+  }
+]
+```
+
+### Disabled Legacy Authentication
+
+Local/SAS authentication is disabled on all services:
+
+- **Storage**: `allowSharedKeyAccess: false`
+- **Event Hub**: `disableLocalAuth: true`
+- **Service Bus**: `disableLocalAuth: true`
+
+### Secrets Management
+
+Only two secrets exist, both stored in Key Vault with RBAC access:
+- Qualys API Token
+- Service Principal Secret (for ACR connector)
+
+The Function App accesses these via Key Vault references—secrets never appear in app settings or logs.
 
 ## Cost Estimation
 
@@ -435,5 +473,6 @@ The architecture presented here delivers:
 - **Self-healing infrastructure**: Missing connectors and registries are created automatically
 - **Multi-subscription support**: Hub-spoke pattern scales across Azure tenants
 - **Real-time notifications**: Service Bus delivers scan events for downstream integration
+- **Security best practices**: Managed Identity everywhere, custom roles for least privilege, disabled legacy auth
 
-Every Azure Resource Manager operation becomes an opportunity to validate security posture before workloads serve production traffic. Detection happens in minutes, not hours or days.
+Every Azure Resource Manager operation becomes an opportunity to validate security posture before workloads serve production traffic. Detection happens in minutes, not hours or days. And the infrastructure itself follows the same security principles it's designed to enforce.

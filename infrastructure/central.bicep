@@ -34,10 +34,34 @@ module resources 'resources.bicep' = {
   }
 }
 
-resource readerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, rg.id, 'Reader')
+// Custom role: Minimal permissions to read ACI and ACA container metadata
+resource containerReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
+  name: guid(subscription().id, 'qualys-container-reader')
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
+    roleName: 'Qualys Container Reader'
+    description: 'Read-only access to ACI container groups and ACA container apps for vulnerability scanning'
+    type: 'CustomRole'
+    assignableScopes: [subscription().id]
+    permissions: [
+      {
+        actions: [
+          'Microsoft.ContainerInstance/containerGroups/read'
+          'Microsoft.App/containerApps/read'
+          'Microsoft.Resources/subscriptions/resourceGroups/read'
+        ]
+        notActions: []
+        dataActions: []
+        notDataActions: []
+      }
+    ]
+  }
+}
+
+// Assign custom role instead of Reader
+resource containerReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, rg.id, 'QualysContainerReader')
+  properties: {
+    roleDefinitionId: containerReaderRole.id
     principalId: resources.outputs.functionAppPrincipalId
     principalType: 'ServicePrincipal'
   }
@@ -72,3 +96,4 @@ output resourceGroupName string = rg.name
 output eventHubNamespace string = resources.outputs.eventHubNamespace
 output diagnosticsSendConnectionString string = resources.outputs.diagnosticsSendConnectionString
 output centralSubscriptionId string = subscription().subscriptionId
+output containerReaderRoleId string = containerReaderRole.id

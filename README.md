@@ -139,15 +139,38 @@ qualys-aci/
 
 ## Security
 
-| Principal | Role | Scope |
-|-----------|------|-------|
-| Function App | Reader | Subscription |
-| Function App | Key Vault Secrets User | Key Vault |
-| Service Principal | AcrPull | Subscription or ACR |
+This solution follows Azure security best practices with least-privilege access:
 
-Secrets stored in Key Vault:
+### Managed Identity (No Connection Strings)
+
+All Azure services use Managed Identity with RBAC instead of connection strings:
+
+| Resource | Role | Scope |
+|----------|------|-------|
+| Storage Account | Storage Blob Data Owner | Storage Account |
+| Storage Account | Storage Table Data Contributor | Storage Account |
+| Event Hub | Azure Event Hubs Data Receiver | Event Hub Namespace |
+| Service Bus | Azure Service Bus Data Sender | Service Bus Namespace |
+| Key Vault | Key Vault Secrets User | Key Vault |
+
+### Custom Role for Minimal Permissions
+
+Instead of the broad `Reader` role, a custom role grants only:
+- `Microsoft.ContainerInstance/containerGroups/read`
+- `Microsoft.App/containerApps/read`
+- `Microsoft.Resources/subscriptions/resourceGroups/read`
+
+### Disabled Features
+
+- **Storage**: `allowSharedKeyAccess: false` - No access key authentication
+- **Event Hub**: `disableLocalAuth: true` - No SAS token authentication
+- **Service Bus**: `disableLocalAuth: true` - No SAS token authentication
+
+### Secrets in Key Vault
+
+Only two secrets stored in Key Vault (accessed via Key Vault references):
 - Qualys API Token
-- Service Principal Secret
+- Service Principal Secret (for ACR connector)
 
 ## Cost Estimate
 

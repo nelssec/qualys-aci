@@ -18,6 +18,15 @@ var functionAppName = 'qscan-${uniqueString(resourceGroup().id)}'
 var appServicePlanName = 'qscan-plan-${uniqueString(resourceGroup().id)}'
 var appInsightsName = 'qscan-insights-${uniqueString(resourceGroup().id)}'
 var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
+var eventHubNamespaceName = 'qscan-${uniqueString(resourceGroup().id)}'
+var serviceBusNamespaceName = 'qscan-sb-${uniqueString(resourceGroup().id)}'
+
+// Built-in role definition IDs
+var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+var eventHubsDataReceiverRoleId = 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde'
+var serviceBusDataSenderRoleId = '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
+var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
@@ -28,11 +37,14 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: false
     accessTier: 'Hot'
     encryption: {
       services: {
         blob: { enabled: true }
         file: { enabled: true }
+        table: { enabled: true }
+        queue: { enabled: true }
       }
       keySource: 'Microsoft.Storage'
     }
@@ -106,64 +118,14 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   properties: { reserved: true }
 }
 
-resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
-  name: functionAppName
-  location: location
-  kind: 'functionapp,linux'
-  identity: { type: 'SystemAssigned' }
-  properties: {
-    serverFarmId: appServicePlan.id
-    httpsOnly: true
-    reserved: true
-    siteConfig: {
-      linuxFxVersion: 'Python|3.11'
-      appSettings: concat([
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}' }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
-        { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appInsights.properties.InstrumentationKey }
-        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
-        { name: 'QUALYS_GATEWAY_URL', value: qualysGatewayUrl }
-        { name: 'QUALYS_API_TOKEN', value: '@Microsoft.KeyVault(SecretUri=${qualysApiTokenSecret.properties.secretUri})' }
-        { name: 'ACR_CONNECTOR_NAME', value: acrConnectorName }
-        { name: 'ACR_APPLICATION_ID', value: acrApplicationId }
-        { name: 'ACR_CLIENT_SECRET', value: '@Microsoft.KeyVault(SecretUri=${acrClientSecretKV.properties.secretUri})' }
-        { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }
-        { name: 'AZURE_TENANT_ID', value: subscription().tenantId }
-        { name: 'STORAGE_CONNECTION_STRING', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}' }
-        { name: 'SCAN_CACHE_HOURS', value: string(scanCacheHours) }
-        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
-        { name: 'ENABLE_ORYX_BUILD', value: 'true' }
-        { name: 'EVENTHUB_CONNECTION_STRING', value: activityLogHubPolicy.listKeys().primaryConnectionString }
-        { name: 'EVENTHUB_NAME', value: activityLogHub.name }
-        { name: 'SERVICEBUS_CONNECTION_STRING', value: serviceBusSendPolicy.listKeys().primaryConnectionString }
-        { name: 'SERVICEBUS_QUEUE_NAME', value: scanNotificationsTopic.name }
-      ], !empty(functionPackageUrl) ? [{ name: 'WEBSITE_RUN_FROM_PACKAGE', value: functionPackageUrl }] : [])
-      ftpsState: 'Disabled'
-      minTlsVersion: '1.2'
-      pythonVersion: '3.11'
-    }
-  }
-}
-
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, functionApp.id, 'Key Vault Secrets User')
-  scope: keyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
 resource eventHubNamespace 'Microsoft.EventHub/namespaces@2023-01-01-preview' = {
-  name: 'qscan-${uniqueString(resourceGroup().id)}'
+  name: eventHubNamespaceName
   location: location
   sku: { name: 'Basic', tier: 'Basic', capacity: 1 }
   properties: {
     minimumTlsVersion: '1.2'
     publicNetworkAccess: 'Enabled'
-    disableLocalAuth: false
+    disableLocalAuth: true
     zoneRedundant: false
     isAutoInflateEnabled: false
     kafkaEnabled: false
@@ -176,12 +138,6 @@ resource activityLogHub 'Microsoft.EventHub/namespaces/eventhubs@2023-01-01-prev
   properties: { messageRetentionInDays: 1, partitionCount: 2 }
 }
 
-resource activityLogHubPolicy 'Microsoft.EventHub/namespaces/eventhubs/authorizationRules@2023-01-01-preview' = {
-  parent: activityLogHub
-  name: 'FunctionAppListen'
-  properties: { rights: ['Listen'] }
-}
-
 resource activityLogHubSendPolicy 'Microsoft.EventHub/namespaces/eventhubs/authorizationRules@2023-01-01-preview' = {
   parent: activityLogHub
   name: 'DiagnosticsSend'
@@ -189,22 +145,115 @@ resource activityLogHubSendPolicy 'Microsoft.EventHub/namespaces/eventhubs/autho
 }
 
 resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
-  name: 'qscan-sb-${uniqueString(resourceGroup().id)}'
+  name: serviceBusNamespaceName
   location: location
   sku: { name: 'Basic', tier: 'Basic' }
-  properties: { minimumTlsVersion: '1.2', publicNetworkAccess: 'Enabled' }
+  properties: {
+    minimumTlsVersion: '1.2'
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: true
+  }
 }
 
-resource scanNotificationsTopic 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+resource scanNotificationsQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: serviceBusNamespace
   name: 'scan-notifications'
   properties: { maxDeliveryCount: 10, defaultMessageTimeToLive: 'P1D' }
 }
 
-resource serviceBusSendPolicy 'Microsoft.ServiceBus/namespaces/AuthorizationRules@2022-10-01-preview' = {
-  parent: serviceBusNamespace
-  name: 'FunctionAppSend'
-  properties: { rights: ['Send'] }
+resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
+  name: functionAppName
+  location: location
+  kind: 'functionapp,linux'
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    serverFarmId: appServicePlan.id
+    httpsOnly: true
+    reserved: true
+    siteConfig: {
+      linuxFxVersion: 'Python|3.11'
+      appSettings: concat([
+        { name: 'AzureWebJobsStorage__accountName', value: storageAccountName }
+        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
+        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
+        { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appInsights.properties.InstrumentationKey }
+        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
+        { name: 'QUALYS_GATEWAY_URL', value: qualysGatewayUrl }
+        { name: 'QUALYS_API_TOKEN', value: '@Microsoft.KeyVault(SecretUri=${qualysApiTokenSecret.properties.secretUri})' }
+        { name: 'ACR_CONNECTOR_NAME', value: acrConnectorName }
+        { name: 'ACR_APPLICATION_ID', value: acrApplicationId }
+        { name: 'ACR_CLIENT_SECRET', value: '@Microsoft.KeyVault(SecretUri=${acrClientSecretKV.properties.secretUri})' }
+        { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }
+        { name: 'AZURE_TENANT_ID', value: subscription().tenantId }
+        { name: 'STORAGE_ACCOUNT_NAME', value: storageAccountName }
+        { name: 'SCAN_CACHE_HOURS', value: string(scanCacheHours) }
+        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
+        { name: 'ENABLE_ORYX_BUILD', value: 'true' }
+        { name: 'EVENTHUB_FULLYQUALIFIEDNAMESPACE', value: '${eventHubNamespaceName}.servicebus.windows.net' }
+        { name: 'EVENTHUB_NAME', value: activityLogHub.name }
+        { name: 'SERVICEBUS_FULLYQUALIFIEDNAMESPACE', value: '${serviceBusNamespaceName}.servicebus.windows.net' }
+        { name: 'SERVICEBUS_QUEUE_NAME', value: scanNotificationsQueue.name }
+      ], !empty(functionPackageUrl) ? [{ name: 'WEBSITE_RUN_FROM_PACKAGE', value: functionPackageUrl }] : [])
+      ftpsState: 'Disabled'
+      minTlsVersion: '1.2'
+      pythonVersion: '3.11'
+    }
+  }
+}
+
+// RBAC: Key Vault Secrets User
+resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, functionApp.id, keyVaultSecretsUserRoleId)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// RBAC: Storage Blob Data Owner (for AzureWebJobsStorage and scan results)
+resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, functionApp.id, storageBlobDataOwnerRoleId)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// RBAC: Storage Table Data Contributor (for scan metadata cache)
+resource storageTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, functionApp.id, storageTableDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageTableDataContributorRoleId)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// RBAC: Event Hubs Data Receiver (for trigger)
+resource eventHubReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(eventHubNamespace.id, functionApp.id, eventHubsDataReceiverRoleId)
+  scope: eventHubNamespace
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', eventHubsDataReceiverRoleId)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// RBAC: Service Bus Data Sender (for notifications)
+resource serviceBusSenderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(serviceBusNamespace.id, functionApp.id, serviceBusDataSenderRoleId)
+  scope: serviceBusNamespace
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataSenderRoleId)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 output functionAppName string = functionApp.name
@@ -216,7 +265,5 @@ output functionAppPrincipalId string = functionApp.identity.principalId
 output functionAppId string = functionApp.id
 output eventHubNamespace string = eventHubNamespace.name
 output activityLogHub string = activityLogHub.name
-output eventHubConnectionString string = activityLogHubPolicy.listKeys().primaryConnectionString
 output diagnosticsSendConnectionString string = activityLogHubSendPolicy.listKeys().primaryConnectionString
 output serviceBusNamespace string = serviceBusNamespace.name
-output serviceBusConnectionString string = serviceBusSendPolicy.listKeys().primaryConnectionString

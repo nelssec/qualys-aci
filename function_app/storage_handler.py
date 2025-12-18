@@ -3,15 +3,23 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from azure.data.tables import TableServiceClient
 
 
 class StorageHandler:
-    def __init__(self, connection_string: str):
-        self.connection_string = connection_string
-        self.blob_service = BlobServiceClient.from_connection_string(connection_string)
-        self.table_service = TableServiceClient.from_connection_string(connection_string)
+    def __init__(self, account_name: str = None):
+        account_name = account_name or os.environ.get('STORAGE_ACCOUNT_NAME')
+        if not account_name:
+            raise ValueError('STORAGE_ACCOUNT_NAME environment variable required')
+
+        credential = DefaultAzureCredential()
+        account_url = f"https://{account_name}.blob.core.windows.net"
+        table_url = f"https://{account_name}.table.core.windows.net"
+
+        self.blob_service = BlobServiceClient(account_url, credential=credential)
+        self.table_service = TableServiceClient(table_url, credential=credential)
         self.results_container = 'scan-results'
         self.metadata_table = 'ScanMetadata'
         self._ensure_storage_exists()
