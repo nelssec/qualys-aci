@@ -2,24 +2,13 @@ targetScope = 'subscription'
 
 param location string = 'eastus'
 param resourceGroupName string = 'qualys-scanner-rg'
-
-@description('Qualys Gateway URL for your POD')
 param qualysGatewayUrl string = 'https://gateway.qg2.apps.qualys.com'
-
 @secure()
-@description('Qualys API Bearer Token')
 param qualysApiToken string
-
-@description('Name for the ACR connector in Qualys')
 param acrConnectorName string = 'qualys-aci-connector'
-
-@description('Service Principal Application (Client) ID for ACR access')
 param acrApplicationId string
-
 @secure()
-@description('Service Principal Client Secret for ACR access')
 param acrClientSecret string
-
 param scanCacheHours int = 24
 param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
@@ -45,8 +34,6 @@ module resources 'resources.bicep' = {
   }
 }
 
-// Grant Reader role at subscription level for reading container metadata
-// Required to fetch ACI/ACA container details via Azure Management API
 resource readerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(subscription().id, rg.id, 'Reader')
   properties: {
@@ -56,9 +43,6 @@ resource readerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
-// Note: AcrPull role is NOT needed here because Qualys uses the Service Principal
-// to pull images directly. The Service Principal should have AcrPull on relevant ACRs.
-
 resource activityLogDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name: 'activity-log-to-eventhub'
   scope: subscription()
@@ -66,38 +50,14 @@ resource activityLogDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-0
     eventHubAuthorizationRuleId: '${subscription().id}/resourceGroups/${resourceGroupName}/providers/Microsoft.EventHub/namespaces/${resources.outputs.eventHubNamespace}/authorizationRules/RootManageSharedAccessKey'
     eventHubName: resources.outputs.activityLogHub
     logs: [
-      {
-        category: 'Administrative'
-        enabled: true
-      }
-      {
-        category: 'Security'
-        enabled: false
-      }
-      {
-        category: 'ServiceHealth'
-        enabled: false
-      }
-      {
-        category: 'Alert'
-        enabled: false
-      }
-      {
-        category: 'Recommendation'
-        enabled: false
-      }
-      {
-        category: 'Policy'
-        enabled: false
-      }
-      {
-        category: 'Autoscale'
-        enabled: false
-      }
-      {
-        category: 'ResourceHealth'
-        enabled: false
-      }
+      { category: 'Administrative', enabled: true }
+      { category: 'Security', enabled: false }
+      { category: 'ServiceHealth', enabled: false }
+      { category: 'Alert', enabled: false }
+      { category: 'Recommendation', enabled: false }
+      { category: 'Policy', enabled: false }
+      { category: 'Autoscale', enabled: false }
+      { category: 'ResourceHealth', enabled: false }
     ]
   }
 }
