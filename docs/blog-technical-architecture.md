@@ -130,14 +130,14 @@ flowchart LR
 ```
 
 ```bash
-export QUALYS_API_TOKEN="your-bearer-token"
-export ACR_APPLICATION_ID="your-sp-app-id"
-export ACR_CLIENT_SECRET="your-sp-secret"
+# Set your Qualys API token
+export QUALYS_ACCESS_TOKEN='your-bearer-token'
 
-./deploy.sh
+# Deploy with Makefile (auto-creates Service Principal)
+make deploy QUALYS_POD=CA1
 ```
 
-The deployment script creates all required resources: Event Hub for Activity Log streaming, Azure Function for event processing, Service Bus for notifications, and Key Vault for secrets.
+The Makefile automatically creates a Service Principal, deploys all required resources via Bicep, and publishes the Azure Function code.
 
 ### Multi-Subscription (Hub-Spoke)
 
@@ -169,12 +169,12 @@ flowchart TB
 
 ```bash
 # Deploy hub in central subscription
+export QUALYS_ACCESS_TOKEN='your-bearer-token'
 export CENTRAL_SUBSCRIPTION_ID="hub-subscription-id"
-./deploy-multi.sh
+make deploy-multi QUALYS_POD=CA1
 
 # Add spoke subscriptions
-export SPOKE_SUBSCRIPTION_ID="spoke-subscription-id"
-./add-spoke.sh
+make add-spoke SPOKE_SUBSCRIPTION_ID="spoke-subscription-id"
 ```
 
 Each spoke subscription forwards Activity Log events to the central Event Hub via diagnostic settings. The central Azure Function processes all events and has Reader access to spoke subscriptions for fetching container metadata.
@@ -281,9 +281,11 @@ def fetch_container_images(subscription_id, resource_group, container_name, cont
 Table Storage tracks recent scans with configurable TTL (default 24 hours):
 
 ```python
+from datetime import datetime, timedelta, timezone
+
 def is_recently_scanned(image, hours=24):
     partition_key = sanitize_name(image)
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     query = f"PartitionKey eq '{partition_key}' and Timestamp ge datetime'{cutoff_time.isoformat()}'"
     entities = table_client.query_entities(query_filter=query)
@@ -310,13 +312,18 @@ def get_or_create_registry(gateway_url, token, registry_name, acr_login_server,
     return {'registry_uuid': result['registry_uuid'], 'created': True}
 ```
 
-Registry naming follows the convention `acr-{registry_name}`, where `registry_name` is derived from the ACR login server (e.g., `acr-myregistry` for `myregistry.azurecr.io`).
+ACR connector naming follows the convention `acr-{subscription_short}-{region}`, where subscription_short is the first 8 characters of the subscription ID (e.g., `acr-d8ee7e92-eastus`).
 
 ### Scan Submission
 
-The function submits on-demand scans to the Qualys Container Security API:
+The function submits on-demand scans to the Qualys Container Security API, targeting the exact deployed tag:
 
 ```python
+from datetime import datetime, timezone
+
+# Always scan the exact tag that was deployed
+tag_filter = image_tag or 'latest'
+
 payload = {
     "filters": [{
         "repoTags": [{
@@ -324,7 +331,7 @@ payload = {
             "tag": tag_filter
         }]
     }],
-    "name": f"ACR-{repo_name}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+    "name": f"ACR-{repo_name}-{tag_filter}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
     "onDemand": True,
     "forceScan": True,
     "registryType": "ACR"
@@ -336,6 +343,8 @@ response = requests.post(
     headers=headers
 )
 ```
+
+The scan filter uses the exact tag from the deployed container - no wildcards. This ensures only the specific image version is scanned.
 
 ### Notifications
 
@@ -374,17 +383,11 @@ Before deploying, ensure you have:
 
 1. **Qualys Registry Sensor** deployed and connected to the Qualys platform.
 
-2. **Service Principal** with AcrPull role on target ACRs:
-   ```bash
-   az ad sp create-for-rbac \
-     --name qualys-acr-scanner \
-     --role AcrPull \
-     --scopes /subscriptions/$(az account show --query id -o tsv)
-   ```
+2. **Qualys API Token** with Container Security permissions.
 
-3. **Qualys API Token** with Container Security permissions.
+3. **Azure CLI** and **Azure Functions Core Tools** installed.
 
-4. **Azure CLI** and **Azure Functions Core Tools** installed.
+The Makefile automatically creates the Service Principal during deployment.
 
 ## Security Considerations
 
@@ -396,7 +399,7 @@ All Azure service authentication uses Managed Identity with RBAC—no connection
 
 | Resource | Role | Purpose |
 |----------|------|---------|
-| Storage Account | Storage Blob Data Owner | Scan results storage |
+| Storage Account | Storage Blob Data Contributor | Scan results storage |
 | Storage Account | Storage Table Data Contributor | Cache metadata |
 | Event Hub | Azure Event Hubs Data Receiver | Function trigger |
 | Service Bus | Azure Service Bus Data Sender | Notifications |
@@ -420,9 +423,8 @@ permissions: [
 
 ### Disabled Legacy Authentication
 
-Local/SAS authentication is disabled on all services:
+Local/SAS authentication is disabled on messaging services:
 
-- **Storage**: `allowSharedKeyAccess: false`
 - **Event Hub**: `disableLocalAuth: true`
 - **Service Bus**: `disableLocalAuth: true`
 
@@ -433,6 +435,13 @@ Only two secrets exist, both stored in Key Vault with RBAC access:
 - Service Principal Secret (for ACR connector)
 
 The Function App accesses these via Key Vault references—secrets never appear in app settings or logs.
+
+## Technology Stack
+
+- **Runtime**: Python 3.12
+- **Infrastructure**: Azure Bicep (2024/2025 API versions)
+- **Dependencies**: Latest Azure SDK packages (December 2025)
+- **Authentication**: Managed Identity + Service Principal
 
 ## Cost Estimation
 
@@ -469,6 +478,7 @@ Container security requires continuous visibility. Scheduled scans and manual tr
 The architecture presented here delivers:
 
 - **Zero-gap coverage**: Every container instance and container app deployment triggers analysis
+- **Exact tag scanning**: Only the deployed image tag is scanned, no wildcards
 - **No credential rotation in Qualys**: Service Principal handles ACR access
 - **Self-healing infrastructure**: Missing connectors and registries are created automatically
 - **Multi-subscription support**: Hub-spoke pattern scales across Azure tenants

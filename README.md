@@ -23,33 +23,38 @@ ACI/ACA Deployment → Activity Log → Event Hub → Azure Function → Qualys 
 - Azure CLI 2.50+
 - Azure subscription with Contributor role
 - Qualys subscription with Container Security module
-- Qualys API Token
+- Qualys API Token (Container Security permissions)
 - Azure Functions Core Tools 4.x
 
 ## Quick Start
 
-### 1. Create Service Principal for ACR Access
+### Using Makefile (Recommended)
 
 ```bash
+# Set your Qualys API token
+export QUALYS_ACCESS_TOKEN='your-qualys-token'
+
+# Deploy (auto-creates Service Principal for ACR access)
+make deploy QUALYS_POD=CA1
+```
+
+The Makefile automatically:
+- Creates a Service Principal with AcrPull role
+- Deploys all Azure infrastructure via Bicep
+- Publishes the Azure Function code
+
+### Manual Deployment
+
+```bash
+# 1. Create Service Principal for ACR Access
 az ad sp create-for-rbac \
   --name qualys-acr-scanner \
   --role AcrPull \
   --scopes /subscriptions/$(az account show --query id -o tsv)
-```
 
-Save the output:
-- `appId` → `ACR_APPLICATION_ID`
-- `password` → `ACR_CLIENT_SECRET`
+# Save: appId → ACR_APPLICATION_ID, password → ACR_CLIENT_SECRET
 
-### 2. Get Qualys API Token
-
-1. Login to Qualys Cloud Platform
-2. Navigate to **Administration** → **API Tokens**
-3. Generate a new token with Container Security permissions
-
-### 3. Deploy
-
-```bash
+# 2. Deploy
 export QUALYS_API_TOKEN="your-qualys-token"
 export ACR_APPLICATION_ID="your-service-principal-app-id"
 export ACR_CLIENT_SECRET="your-service-principal-secret"
@@ -57,18 +62,28 @@ export ACR_CLIENT_SECRET="your-service-principal-secret"
 ./deploy.sh
 ```
 
+## Makefile Targets
+
+| Target | Description |
+|--------|-------------|
+| `make deploy QUALYS_POD=CA1` | Deploy scanner (auto-creates SP) |
+| `make status` | Show deployment status |
+| `make logs` | Stream function app logs |
+| `make test-scan TEST_IMAGE=...` | Deploy test container |
+| `make cleanup` | Remove all resources |
+| `make create-sp` | Manually create Service Principal |
+
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `QUALYS_GATEWAY_URL` | Qualys API gateway URL | `https://gateway.qg2.apps.qualys.com` |
-| `QUALYS_API_TOKEN` | Qualys API Bearer token | Required |
-| `ACR_CONNECTOR_NAME` | Name for ACR connector in Qualys | `qualys-aci-connector` |
-| `ACR_APPLICATION_ID` | Service Principal App ID | Required |
-| `ACR_CLIENT_SECRET` | Service Principal Secret | Required |
+| `QUALYS_ACCESS_TOKEN` | Qualys API Bearer token | Required |
+| `QUALYS_POD` | Qualys POD (US1, US2, CA1, etc.) | Required |
+| `RESOURCE_GROUP` | Azure resource group name | `qualys-scanner-rg` |
+| `LOCATION` | Azure region | `eastus` |
 | `SCAN_CACHE_HOURS` | Hours before rescanning same image | `24` |
 
-### Qualys Gateway URLs by POD
+### Qualys POD Gateway URLs
 
 | POD | Gateway URL |
 |-----|-------------|
@@ -80,24 +95,33 @@ export ACR_CLIENT_SECRET="your-service-principal-secret"
 | CA1 | `https://gateway.qg1.apps.qualys.ca` |
 | AU1 | `https://gateway.qg1.apps.qualys.com.au` |
 
+### ACR Connector Naming
+
+The ACR connector in Qualys is automatically named: `acr-{subscription_short}-{region}`
+
+Example: `acr-d8ee7e92-eastus`
+
 ## Multi-Subscription Deployment
 
 Deploy to a central subscription and add spoke subscriptions:
 
 ```bash
-export QUALYS_API_TOKEN="your-qualys-token"
-export ACR_APPLICATION_ID="your-service-principal-app-id"
-export ACR_CLIENT_SECRET="your-service-principal-secret"
+export QUALYS_ACCESS_TOKEN="your-qualys-token"
 export CENTRAL_SUBSCRIPTION_ID="your-central-subscription-id"
 
-./deploy-multi.sh
+make deploy-multi QUALYS_POD=CA1
 
 # Add spoke subscriptions
-export SPOKE_SUBSCRIPTION_ID="spoke-subscription-id"
-./add-spoke.sh
+make add-spoke SPOKE_SUBSCRIPTION_ID="spoke-subscription-id"
 ```
 
 ## Testing
+
+```bash
+make test-scan TEST_IMAGE=myacr.azurecr.io/myapp:v1.0
+```
+
+Or manually:
 
 ```bash
 az container create \
@@ -109,7 +133,7 @@ az container create \
   --restart-policy Never
 ```
 
-Only images from Azure Container Registry (`.azurecr.io`) are scanned.
+**Note:** Only images from Azure Container Registry (`.azurecr.io`) are scanned. Public images are skipped.
 
 ## Notifications
 
@@ -120,12 +144,13 @@ Scan events are sent to Azure Service Bus queue `scan-notifications`. Subscribe 
 
 ```
 qualys-aci/
+├── Makefile                 # Simplified deployment commands
 ├── function_app/
 │   ├── function_app.py      # Azure Function (Event Hub trigger)
 │   ├── qualys_api.py        # Qualys Registry API client
 │   ├── image_parser.py      # Container image name parser
 │   ├── storage_handler.py   # Azure Storage operations
-│   └── requirements.txt
+│   └── requirements.txt     # Python 3.12 dependencies
 ├── infrastructure/
 │   ├── main.bicep           # Single subscription deployment
 │   ├── central.bicep        # Multi-subscription central hub
@@ -147,7 +172,7 @@ All Azure services use Managed Identity with RBAC instead of connection strings:
 
 | Resource | Role | Scope |
 |----------|------|-------|
-| Storage Account | Storage Blob Data Owner | Storage Account |
+| Storage Account | Storage Blob Data Contributor | Storage Account |
 | Storage Account | Storage Table Data Contributor | Storage Account |
 | Event Hub | Azure Event Hubs Data Receiver | Event Hub Namespace |
 | Service Bus | Azure Service Bus Data Sender | Service Bus Namespace |
@@ -160,9 +185,8 @@ Instead of the broad `Reader` role, a custom role grants only:
 - `Microsoft.App/containerApps/read`
 - `Microsoft.Resources/subscriptions/resourceGroups/read`
 
-### Disabled Features
+### Disabled Legacy Authentication
 
-- **Storage**: `allowSharedKeyAccess: false` - No access key authentication
 - **Event Hub**: `disableLocalAuth: true` - No SAS token authentication
 - **Service Bus**: `disableLocalAuth: true` - No SAS token authentication
 
@@ -171,6 +195,12 @@ Instead of the broad `Reader` role, a custom role grants only:
 Only two secrets stored in Key Vault (accessed via Key Vault references):
 - Qualys API Token
 - Service Principal Secret (for ACR connector)
+
+## Technology Stack
+
+- **Runtime**: Python 3.12
+- **Infrastructure**: Azure Bicep (2024/2025 API versions)
+- **Authentication**: Managed Identity + Service Principal
 
 ## Cost Estimate
 
@@ -188,8 +218,9 @@ Monthly (~100 scans):
 ## Limitations
 
 - Activity Log latency: 10-15 minutes
-- ACR images only
+- ACR images only (public images skipped)
 - Service Principal must have access to all ACRs
+- Scans exact deployed tag only
 
 ## License
 
