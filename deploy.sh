@@ -5,7 +5,6 @@ RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
 LOCATION="${LOCATION:-eastus}"
 QUALYS_API_TOKEN="${QUALYS_API_TOKEN:-}"
 QUALYS_GATEWAY_URL="${QUALYS_GATEWAY_URL:-https://gateway.qg2.apps.qualys.com}"
-ACR_CONNECTOR_NAME="${ACR_CONNECTOR_NAME:-qualys-aci-connector}"
 ACR_APPLICATION_ID="${ACR_APPLICATION_ID:-}"
 ACR_CLIENT_SECRET="${ACR_CLIENT_SECRET:-}"
 
@@ -49,11 +48,15 @@ if [ "$RG_STATE" == "Deleting" ]; then
     sleep 10
   done
 elif [ "$RG_STATE" != "NotFound" ]; then
-  echo "WARNING: Resource group exists in state: $RG_STATE"
-  read -p "Continue with update deployment? (yes/no): " -r
-  if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-    echo "Deployment cancelled"
-    exit 0
+  echo "Resource group exists in state: $RG_STATE"
+  if [ -z "$FORCE_DEPLOY" ]; then
+    read -p "Continue with update deployment? (yes/no): " -r
+    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+      echo "Deployment cancelled"
+      exit 0
+    fi
+  else
+    echo "FORCE_DEPLOY set, continuing..."
   fi
 fi
 
@@ -66,7 +69,6 @@ az deployment sub create \
   --parameters resourceGroupName="$RG" \
   --parameters qualysGatewayUrl="$QUALYS_GATEWAY_URL" \
   --parameters qualysApiToken="$QUALYS_API_TOKEN" \
-  --parameters acrConnectorName="$ACR_CONNECTOR_NAME" \
   --parameters acrApplicationId="$ACR_APPLICATION_ID" \
   --parameters acrClientSecret="$ACR_CLIENT_SECRET" \
   --output none
@@ -83,7 +85,7 @@ echo ""
 echo "[2/2] Deploying function code..."
 cd function_app
 
-if func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
+if func azure functionapp publish "$FUNCTION_APP" --python --build local 2>&1; then
   echo "Function code deployed successfully"
 else
   EXIT_CODE=$?

@@ -6,7 +6,6 @@ RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
 LOCATION="${LOCATION:-eastus}"
 QUALYS_API_TOKEN="${QUALYS_API_TOKEN:-}"
 QUALYS_GATEWAY_URL="${QUALYS_GATEWAY_URL:-https://gateway.qg2.apps.qualys.com}"
-ACR_CONNECTOR_NAME="${ACR_CONNECTOR_NAME:-qualys-aci-connector}"
 ACR_APPLICATION_ID="${ACR_APPLICATION_ID:-}"
 ACR_CLIENT_SECRET="${ACR_CLIENT_SECRET:-}"
 OUTPUTS_FILE=".deployment-outputs.json"
@@ -58,7 +57,6 @@ DEPLOYMENT_OUTPUT=$(az deployment sub create \
   --parameters resourceGroupName="$RG" \
   --parameters qualysGatewayUrl="$QUALYS_GATEWAY_URL" \
   --parameters qualysApiToken="$QUALYS_API_TOKEN" \
-  --parameters acrConnectorName="$ACR_CONNECTOR_NAME" \
   --parameters acrApplicationId="$ACR_APPLICATION_ID" \
   --parameters acrClientSecret="$ACR_CLIENT_SECRET" \
   --query 'properties.outputs' \
@@ -81,7 +79,7 @@ echo ""
 echo "[2/2] Deploying function code..."
 cd function_app
 
-if func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
+if func azure functionapp publish "$FUNCTION_APP" --python --build local 2>&1; then
   echo "Function code deployed successfully"
 else
   EXIT_CODE=$?

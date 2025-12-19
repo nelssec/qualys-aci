@@ -5,7 +5,6 @@ param resourceGroupName string = 'qualys-scanner-rg'
 param qualysGatewayUrl string = 'https://gateway.qg2.apps.qualys.com'
 @secure()
 param qualysApiToken string
-param acrConnectorName string = 'qualys-aci-connector'
 param acrApplicationId string
 @secure()
 param acrClientSecret string
@@ -25,7 +24,6 @@ module resources 'resources.bicep' = {
     location: location
     qualysGatewayUrl: qualysGatewayUrl
     qualysApiToken: qualysApiToken
-    acrConnectorName: acrConnectorName
     acrApplicationId: acrApplicationId
     acrClientSecret: acrClientSecret
     scanCacheHours: scanCacheHours

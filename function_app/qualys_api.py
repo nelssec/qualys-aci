@@ -2,7 +2,7 @@ import json
 import logging
 import urllib.parse
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def create_acr_connector(gateway_url: str, token: str, name: str,
         "name": name,
         "applicationId": application_id,
         "clientSecret": client_secret,
-        "description": description or f"ACR connector created {datetime.now().strftime('%Y-%m-%d')}"
+        "description": description or f"ACR connector created {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
     }
 
     logger.info(f"Creating ACR connector: {name}")
@@ -200,18 +200,19 @@ def submit_on_demand_scan(gateway_url: str, token: str, registry_uuid: str,
                           repo_name: str, image_tag: str) -> Dict:
     url = f"{gateway_url}/csapi/v1.3/registry/{registry_uuid}/schedule"
     headers = get_headers(token)
-    tag_filter = image_tag if image_tag != 'latest' else '.*'
+    # Always scan the exact tag that was deployed (including 'latest')
+    tag_filter = image_tag or 'latest'
 
     payload = {
         "filters": [{"repoTags": [{"repo": repo_name, "tag": tag_filter}], "days": None}],
-        "name": f"ACR-{repo_name}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "name": f"ACR-{repo_name}-{tag_filter}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "onDemand": True,
         "schedule": "00:00",
         "forceScan": True,
         "registryType": "ACR"
     }
 
-    logger.info(f"Submitting scan for {repo_name}:{image_tag}")
+    logger.info(f"Submitting scan for {repo_name}:{tag_filter}")
     response = requests.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
 
     return {

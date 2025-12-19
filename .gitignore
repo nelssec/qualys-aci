@@ -52,6 +52,8 @@ config/config.json
 *.key
 *.pfx
 credentials.json
+.sp-credentials.json
+.deployment-outputs.json
 
 # Test and coverage
 .pytest_cache/

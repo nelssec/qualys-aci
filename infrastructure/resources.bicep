@@ -2,7 +2,8 @@ param location string = resourceGroup().location
 param qualysGatewayUrl string = 'https://gateway.qg2.apps.qualys.com'
 @secure()
 param qualysApiToken string
-param acrConnectorName string = 'qualys-aci-connector'
+// ACR connector name format: acr-{subscription_short}-{region}
+var acrConnectorName = 'acr-${take(subscription().subscriptionId, 8)}-${location}'
 param acrApplicationId string
 @secure()
 param acrClientSecret string
@@ -21,14 +22,14 @@ var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
 var eventHubNamespaceName = 'qscan-${uniqueString(resourceGroup().id)}'
 var serviceBusNamespaceName = 'qscan-sb-${uniqueString(resourceGroup().id)}'
 
-// Built-in role definition IDs
-var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+// Built-in role definition IDs (least privilege)
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'  // Contributor, not Owner
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var eventHubsDataReceiverRoleId = 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde'
 var serviceBusDataSenderRoleId = '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
   name: storageAccountName
   location: location
   sku: { name: 'Standard_LRS' }
@@ -37,7 +38,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: false
+    allowSharedKeyAccess: true  // Required for Azure Functions deployment with func CLI
     accessTier: 'Hot'
     encryption: {
       services: {
@@ -51,18 +52,18 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
 }
 
-resource scanResultsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+resource scanResultsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2025-01-01' = {
   name: '${storageAccountName}/default/scan-results'
   dependsOn: [storageAccount]
   properties: { publicAccess: 'None' }
 }
 
-resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2025-01-01' = {
   parent: storageAccount
   name: 'default'
 }
 
-resource scanMetadataTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+resource scanMetadataTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2025-01-01' = {
   parent: tableService
   name: 'ScanMetadata'
 }
@@ -79,7 +80,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
   name: keyVaultName
   location: location
   properties: {
@@ -95,19 +96,19 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource qualysApiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource qualysApiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
   parent: keyVault
   name: 'QualysApiToken'
   properties: { value: qualysApiToken }
 }
 
-resource acrClientSecretKV 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource acrClientSecretKV 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
   parent: keyVault
   name: 'AcrClientSecret'
   properties: { value: acrClientSecret }
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: appServicePlanName
   location: location
   sku: {
@@ -118,7 +119,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   properties: { reserved: true }
 }
 
-resource eventHubNamespace 'Microsoft.EventHub/namespaces@2023-01-01-preview' = {
+resource eventHubNamespace 'Microsoft.EventHub/namespaces@2024-01-01' = {
   name: eventHubNamespaceName
   location: location
   sku: { name: 'Basic', tier: 'Basic', capacity: 1 }
@@ -132,19 +133,19 @@ resource eventHubNamespace 'Microsoft.EventHub/namespaces@2023-01-01-preview' = 
   }
 }
 
-resource activityLogHub 'Microsoft.EventHub/namespaces/eventhubs@2023-01-01-preview' = {
+resource activityLogHub 'Microsoft.EventHub/namespaces/eventhubs@2024-01-01' = {
   parent: eventHubNamespace
   name: 'activity-log'
   properties: { messageRetentionInDays: 1, partitionCount: 2 }
 }
 
-resource activityLogHubSendPolicy 'Microsoft.EventHub/namespaces/eventhubs/authorizationRules@2023-01-01-preview' = {
+resource activityLogHubSendPolicy 'Microsoft.EventHub/namespaces/eventhubs/authorizationRules@2024-01-01' = {
   parent: activityLogHub
   name: 'DiagnosticsSend'
   properties: { rights: ['Send'] }
 }
 
-resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
+resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   name: serviceBusNamespaceName
   location: location
   sku: { name: 'Basic', tier: 'Basic' }
@@ -155,13 +156,13 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   }
 }
 
-resource scanNotificationsQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+resource scanNotificationsQueue 'Microsoft.ServiceBus/namespaces/queues@2024-01-01' = {
   parent: serviceBusNamespace
   name: 'scan-notifications'
   properties: { maxDeliveryCount: 10, defaultMessageTimeToLive: 'P1D' }
 }
 
-resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
+resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: functionAppName
   location: location
   kind: 'functionapp,linux'
@@ -171,8 +172,9 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
     httpsOnly: true
     reserved: true
     siteConfig: {
-      linuxFxVersion: 'Python|3.11'
+      linuxFxVersion: 'Python|3.12'
       appSettings: concat([
+        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' }
         { name: 'AzureWebJobsStorage__accountName', value: storageAccountName }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
@@ -196,12 +198,12 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
       ], !empty(functionPackageUrl) ? [{ name: 'WEBSITE_RUN_FROM_PACKAGE', value: functionPackageUrl }] : [])
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
-      pythonVersion: '3.11'
+      pythonVersion: '3.12'
     }
   }
 }
 
-// RBAC: Key Vault Secrets User
+// RBAC: Key Vault Secrets User (read-only access to secrets)
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVault.id, functionApp.id, keyVaultSecretsUserRoleId)
   scope: keyVault
@@ -212,18 +214,18 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
-// RBAC: Storage Blob Data Owner (for AzureWebJobsStorage and scan results)
+// RBAC: Storage Blob Data Contributor (read/write blobs - not Owner)
 resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, functionApp.id, storageBlobDataOwnerRoleId)
+  name: guid(storageAccount.id, functionApp.id, storageBlobDataContributorRoleId)
   scope: storageAccount
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// RBAC: Storage Table Data Contributor (for scan metadata cache)
+// RBAC: Storage Table Data Contributor (read/write table data)
 resource storageTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccount.id, functionApp.id, storageTableDataContributorRoleId)
   scope: storageAccount
@@ -234,7 +236,7 @@ resource storageTableRoleAssignment 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
-// RBAC: Event Hubs Data Receiver (for trigger)
+// RBAC: Event Hubs Data Receiver (receive messages only)
 resource eventHubReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(eventHubNamespace.id, functionApp.id, eventHubsDataReceiverRoleId)
   scope: eventHubNamespace
@@ -245,7 +247,7 @@ resource eventHubReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments
   }
 }
 
-// RBAC: Service Bus Data Sender (for notifications)
+// RBAC: Service Bus Data Sender (send messages only)
 resource serviceBusSenderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(serviceBusNamespace.id, functionApp.id, serviceBusDataSenderRoleId)
   scope: serviceBusNamespace

@@ -8,7 +8,7 @@
     "STORAGE_ACCOUNT_NAME": "<storage-account-name>",
     "QUALYS_GATEWAY_URL": "https://gateway.qg2.apps.qualys.com",
     "QUALYS_API_TOKEN": "<qualys-api-token>",
-    "ACR_CONNECTOR_NAME": "qualys-aci-connector",
+    "ACR_CONNECTOR_NAME": "acr-<subscription-short>-<region>",
     "ACR_APPLICATION_ID": "<service-principal-app-id>",
     "ACR_CLIENT_SECRET": "<service-principal-secret>",
     "SCAN_CACHE_HOURS": "24",

@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
@@ -37,8 +37,8 @@ class StorageHandler:
     def save_scan_result(self, result: Dict):
         try:
             image = result.get('image', 'unknown')
-            scan_id = result.get('scan_id', datetime.utcnow().strftime('%Y%m%d%H%M%S'))
-            timestamp = result.get('timestamp', datetime.utcnow().isoformat())
+            scan_id = result.get('scan_id', datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S'))
+            timestamp = result.get('timestamp', datetime.now(timezone.utc).isoformat())
 
             blob_name = f'{self._sanitize_name(image)}/{scan_id}.json'
             blob_client = self.blob_service.get_blob_client(container=self.results_container, blob=blob_name)
@@ -75,7 +75,7 @@ class StorageHandler:
 
     def save_error(self, error_info: Dict):
         try:
-            timestamp = error_info.get('timestamp', datetime.utcnow().isoformat())
+            timestamp = error_info.get('timestamp', datetime.now(timezone.utc).isoformat())
             image = error_info.get('image', 'unknown')
             blob_name = f'errors/{self._sanitize_name(image)}/{timestamp}.json'
             blob_client = self.blob_service.get_blob_client(container=self.results_container, blob=blob_name)
@@ -90,7 +90,7 @@ class StorageHandler:
 
             table_client = self.table_service.get_table_client(self.metadata_table)
             partition_key = self._sanitize_name(image)
-            cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
             query_filter = f"PartitionKey eq '{partition_key}' and Timestamp ge datetime'{cutoff_time.isoformat()}'"
             entities = list(table_client.query_entities(query_filter=query_filter, select=['RowKey']))

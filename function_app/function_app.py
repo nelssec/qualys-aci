@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import azure.functions as func
-from datetime import datetime
+from datetime import datetime, timezone
 
 from image_parser import ImageParser
 from storage_handler import StorageHandler
@@ -113,7 +113,7 @@ def process_activity_log_record(record: dict):
             except Exception as img_error:
                 logging.error(f'Failed to process image {image}: {str(img_error)}')
                 storage.save_error({
-                    'timestamp': datetime.utcnow().isoformat(),
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
                     'image': image,
                     'error': str(img_error),
                     'resource_id': resource_id
@@ -172,7 +172,7 @@ def process_image(image: str, resource_id: str, container_type: str, storage: St
     logging.info(f'Scan submitted: {scan_result.get("schedule_name")}')
 
     result_record = {
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'container_type': container_type,
         'image': image,
         'resource_id': resource_id,
