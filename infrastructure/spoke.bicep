@@ -8,7 +8,6 @@ param eventHubName string = 'activity-log'
 param eventHubSendConnectionString string
 param functionAppPrincipalId string
 
-// Custom role: Minimal permissions to read ACI and ACA container metadata
 resource containerReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
   name: guid(subscription().id, 'qualys-container-reader')
   properties: {
@@ -31,7 +30,6 @@ resource containerReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01
   }
 }
 
-// Assign custom role to central function app
 resource containerReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(subscription().id, centralSubscriptionId, 'QualysContainerReader')
   properties: {

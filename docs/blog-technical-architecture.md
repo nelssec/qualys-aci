@@ -344,7 +344,7 @@ response = requests.post(
 )
 ```
 
-The scan filter uses the exact tag from the deployed container - no wildcards. This ensures only the specific image version is scanned.
+The scan filter targets the exact tag from the deployed container.
 
 ### Notifications
 
@@ -478,7 +478,7 @@ Container security requires continuous visibility. Scheduled scans and manual tr
 The architecture presented here delivers:
 
 - **Zero-gap coverage**: Every container instance and container app deployment triggers analysis
-- **Exact tag scanning**: Only the deployed image tag is scanned, no wildcards
+- **Exact tag scanning**: Only the deployed image tag is scanned
 - **No credential rotation in Qualys**: Service Principal handles ACR access
 - **Self-healing infrastructure**: Missing connectors and registries are created automatically
 - **Multi-subscription support**: Hub-spoke pattern scales across Azure tenants

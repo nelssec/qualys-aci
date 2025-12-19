@@ -218,9 +218,8 @@ Monthly (~100 scans):
 ## Limitations
 
 - Activity Log latency: 10-15 minutes
-- ACR images only (public images skipped)
+- ACR images only (public images are skipped)
 - Service Principal must have access to all ACRs
-- Scans exact deployed tag only
 
 ## License
 

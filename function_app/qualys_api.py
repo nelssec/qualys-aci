@@ -200,7 +200,6 @@ def submit_on_demand_scan(gateway_url: str, token: str, registry_uuid: str,
                           repo_name: str, image_tag: str) -> Dict:
     url = f"{gateway_url}/csapi/v1.3/registry/{registry_uuid}/schedule"
     headers = get_headers(token)
-    # Always scan the exact tag that was deployed (including 'latest')
     tag_filter = image_tag or 'latest'
 
     payload = {

@@ -2,7 +2,6 @@ param location string = resourceGroup().location
 param qualysGatewayUrl string = 'https://gateway.qg2.apps.qualys.com'
 @secure()
 param qualysApiToken string
-// ACR connector name format: acr-{subscription_short}-{region}
 var acrConnectorName = 'acr-${take(subscription().subscriptionId, 8)}-${location}'
 param acrApplicationId string
 @secure()
@@ -22,8 +21,7 @@ var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
 var eventHubNamespaceName = 'qscan-${uniqueString(resourceGroup().id)}'
 var serviceBusNamespaceName = 'qscan-sb-${uniqueString(resourceGroup().id)}'
 
-// Built-in role definition IDs (least privilege)
-var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'  // Contributor, not Owner
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var eventHubsDataReceiverRoleId = 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde'
 var serviceBusDataSenderRoleId = '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
@@ -38,7 +36,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: true  // Required for Azure Functions deployment with func CLI
+    allowSharedKeyAccess: true
     accessTier: 'Hot'
     encryption: {
       services: {
@@ -203,7 +201,6 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   }
 }
 
-// RBAC: Key Vault Secrets User (read-only access to secrets)
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVault.id, functionApp.id, keyVaultSecretsUserRoleId)
   scope: keyVault
@@ -214,7 +211,6 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
-// RBAC: Storage Blob Data Contributor (read/write blobs - not Owner)
 resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccount.id, functionApp.id, storageBlobDataContributorRoleId)
   scope: storageAccount
@@ -225,7 +221,6 @@ resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
-// RBAC: Storage Table Data Contributor (read/write table data)
 resource storageTableRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccount.id, functionApp.id, storageTableDataContributorRoleId)
   scope: storageAccount
@@ -236,7 +231,6 @@ resource storageTableRoleAssignment 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
-// RBAC: Event Hubs Data Receiver (receive messages only)
 resource eventHubReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(eventHubNamespace.id, functionApp.id, eventHubsDataReceiverRoleId)
   scope: eventHubNamespace
@@ -247,7 +241,6 @@ resource eventHubReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments
   }
 }
 
-// RBAC: Service Bus Data Sender (send messages only)
 resource serviceBusSenderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(serviceBusNamespace.id, functionApp.id, serviceBusDataSenderRoleId)
   scope: serviceBusNamespace
