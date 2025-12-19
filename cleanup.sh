@@ -39,18 +39,10 @@ else
 fi
 
 echo ""
-echo "Cleaning up Service Principal..."
-SP_NAME="${SP_NAME:-qualys-acr-scanner}"
-SP_ID=$(az ad sp list --display-name "$SP_NAME" --query "[0].appId" -o tsv 2>/dev/null || true)
-if [ -n "$SP_ID" ]; then
-  az ad sp delete --id "$SP_ID" 2>/dev/null && echo "Deleted Service Principal: $SP_NAME" || echo "Could not delete SP (may require elevated permissions)"
-else
-  echo "No Service Principal found: $SP_NAME"
-fi
-
-echo ""
-echo "Cleaning up local credential files..."
-rm -f .sp-credentials.json .deployment-outputs.json 2>/dev/null && echo "Deleted local credential files" || echo "No local credential files found"
+echo "Cleaning up local files..."
+rm -f .deployment-outputs.json 2>/dev/null
+echo "Note: Service Principal and .sp-credentials.json preserved (required by Qualys connector)"
+echo "To fully remove, run: make delete-sp"
 
 echo ""
 echo "Cleanup complete"
