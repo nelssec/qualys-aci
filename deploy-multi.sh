@@ -79,7 +79,7 @@ echo ""
 echo "[2/2] Deploying function code..."
 cd function_app
 
-if func azure functionapp publish "$FUNCTION_APP" --python --build local 2>&1; then
+if func azure functionapp publish "$FUNCTION_APP" --python --build remote 2>&1; then
   echo "Function code deployed successfully"
 else
   EXIT_CODE=$?
