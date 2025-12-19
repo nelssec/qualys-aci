@@ -1,4 +1,4 @@
-.PHONY: deploy deploy-multi cleanup create-sp delete-sp check-prereqs help status logs test-scan
+.PHONY: deploy deploy-multi clean clean-all create-sp delete-sp check-prereqs help status logs test-scan
 
 # Configuration (no defaults for required auth)
 RESOURCE_GROUP ?= qualys-scanner-rg
@@ -133,7 +133,12 @@ ifndef SPOKE_SUBSCRIPTION_ID
 endif
 	@./add-spoke.sh
 
-cleanup: ## Remove all deployed resources
+clean: ## Clean local files only
+	@echo "Cleaning local files..."
+	@rm -f .sp-credentials.json .deployment-outputs.json
+	@echo "Local files cleaned"
+
+clean-all: clean ## Full teardown: Azure resources + Service Principal
 	@./cleanup.sh
 
 status: ## Show deployment status
