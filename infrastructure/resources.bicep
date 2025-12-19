@@ -2,7 +2,7 @@ param location string = resourceGroup().location
 param qualysGatewayUrl string = 'https://gateway.qg2.apps.qualys.com'
 @secure()
 param qualysApiToken string
-var acrConnectorName = 'acr-${take(subscription().subscriptionId, 8)}-${location}'
+var acrConnectorName = 'acr-${take(subscription().subscriptionId, 8)}'
 param acrApplicationId string
 @secure()
 param acrClientSecret string
@@ -189,7 +189,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'SCAN_CACHE_HOURS', value: string(scanCacheHours) }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'ENABLE_ORYX_BUILD', value: 'true' }
-        { name: 'EVENTHUB_FULLYQUALIFIEDNAMESPACE', value: '${eventHubNamespaceName}.servicebus.windows.net' }
+        { name: 'EVENTHUB__fullyQualifiedNamespace', value: '${eventHubNamespaceName}.servicebus.windows.net' }
         { name: 'EVENTHUB_NAME', value: activityLogHub.name }
         { name: 'SERVICEBUS_FULLYQUALIFIEDNAMESPACE', value: '${serviceBusNamespaceName}.servicebus.windows.net' }
         { name: 'SERVICEBUS_QUEUE_NAME', value: scanNotificationsQueue.name }

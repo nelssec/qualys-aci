@@ -97,9 +97,11 @@ export ACR_CLIENT_SECRET="your-service-principal-secret"
 
 ### ACR Connector Naming
 
-The ACR connector in Qualys is automatically named: `acr-{subscription_short}-{region}`
+The ACR connector in Qualys is automatically named: `acr-{subscription_short}`
 
-Example: `acr-d8ee7e92-eastus`
+Example: `acr-d8ee7e92`
+
+One connector covers all ACRs in the subscription (regardless of region).
 
 ## Multi-Subscription Deployment
 

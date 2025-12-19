@@ -78,7 +78,7 @@ def ensure_acr_connector(gateway_url: str, token: str, name: str,
         logger.info(f"Found existing ACR connector: {name}")
         return {
             'connector_name': existing.get('name'),
-            'connector_id': existing.get('connectorId'),
+            'connector_id': existing.get('acrConnectorId') or existing.get('connectorId'),
             'created': False
         }
 
@@ -87,7 +87,7 @@ def ensure_acr_connector(gateway_url: str, token: str, name: str,
         logger.info(f"Found existing ACR connector by app ID: {existing.get('name')}")
         return {
             'connector_name': existing.get('name'),
-            'connector_id': existing.get('connectorId'),
+            'connector_id': existing.get('acrConnectorId') or existing.get('connectorId'),
             'created': False
         }
 
@@ -95,7 +95,7 @@ def ensure_acr_connector(gateway_url: str, token: str, name: str,
     if result.get('created'):
         return {
             'connector_name': name,
-            'connector_id': result.get('connector', {}).get('connectorId'),
+            'connector_id': result.get('connector', {}).get('acrConnectorId') or result.get('connector', {}).get('connectorId'),
             'created': True
         }
     return {'connector_name': None, 'error': result.get('error')}
@@ -138,17 +138,18 @@ def get_registry_by_name(gateway_url: str, token: str, registry_name: str) -> Op
 
 
 def create_acr_registry(gateway_url: str, token: str, registry_name: str,
-                        acr_login_server: str, connector_name: str) -> Dict:
+                        acr_login_server: str, connector_id: str) -> Dict:
     url = f"{gateway_url}/csapi/v1.3/registry"
     headers = get_headers(token)
     registry_uri = f"https://{acr_login_server}"
 
     payload = {
-        "registryType": "ACR",
+        "registryType": "Azure",
         "registryUri": registry_uri,
         "registryName": registry_name,
-        "credentialType": "ACR",
-        "acr": {"connectorName": connector_name}
+        "credentialType": "Azure",
+        "registryUuid": None,
+        "acrRequest": {"connectorId": connector_id}
     }
 
     logger.info(f"Creating ACR registry: {registry_name} -> {acr_login_server}")
@@ -182,14 +183,24 @@ def get_or_create_registry(gateway_url: str, token: str, registry_name: str,
         logger.info(f"Found existing registry by name: {uuid[:8]}...")
         return {'registry_uuid': uuid, 'created': False, 'exists': True}
 
+    connector_id = None
     if application_id and client_secret:
         logger.info(f"Ensuring ACR connector exists: {connector_name}")
         connector_result = ensure_acr_connector(gateway_url, token, connector_name, application_id, client_secret)
         if connector_result.get('error'):
             logger.warning(f"Connector issue: {connector_result.get('error')}")
+        connector_id = connector_result.get('connector_id')
+
+    if not connector_id:
+        existing = get_acr_connector(gateway_url, token, connector_name=connector_name)
+        if existing:
+            connector_id = existing.get('acrConnectorId') or existing.get('connectorId')
+
+    if not connector_id:
+        return {'registry_uuid': None, 'created': False, 'exists': False, 'error': 'No connector ID available'}
 
     logger.info(f"Creating registry: {registry_name}")
-    result = create_acr_registry(gateway_url, token, registry_name, acr_login_server, connector_name)
+    result = create_acr_registry(gateway_url, token, registry_name, acr_login_server, connector_id)
 
     if result.get('created'):
         return {'registry_uuid': result['registry_uuid'], 'created': True, 'exists': True}
@@ -204,11 +215,11 @@ def submit_on_demand_scan(gateway_url: str, token: str, registry_uuid: str,
 
     payload = {
         "filters": [{"repoTags": [{"repo": repo_name, "tag": tag_filter}], "days": None}],
-        "name": f"ACR-{repo_name}-{tag_filter}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        "name": f"Azure-{repo_name}-{tag_filter}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "onDemand": True,
         "schedule": "00:00",
         "forceScan": True,
-        "registryType": "ACR"
+        "registryType": "Azure"
     }
 
     logger.info(f"Submitting scan for {repo_name}:{tag_filter}")

@@ -198,7 +198,7 @@ def process_image(image: str, resource_id: str, container_type: str, storage: St
 @app.event_hub_message_trigger(
     arg_name="event",
     event_hub_name="%EVENTHUB_NAME%",
-    connection="EVENTHUB_FULLYQUALIFIEDNAMESPACE",
+    connection="EVENTHUB",
     cardinality=func.Cardinality.ONE
 )
 def activity_log_processor(event: func.EventHubEvent):
