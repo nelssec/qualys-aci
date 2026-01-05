@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CENTRAL_SUB="${CENTRAL_SUBSCRIPTION_ID:-}"
+HUB_SUB="${HUB_SUBSCRIPTION_ID:-}"
 RG="${RESOURCE_GROUP:-qualys-scanner-rg}"
 LOCATION="${LOCATION:-eastus}"
 QUALYS_API_TOKEN="${QUALYS_API_TOKEN:-}"
@@ -17,8 +17,8 @@ if [ -z "$QUALYS_API_TOKEN" ]; then
   echo "  export QUALYS_API_TOKEN='your-qualys-token'"
   echo "  export ACR_APPLICATION_ID='your-service-principal-app-id'"
   echo "  export ACR_CLIENT_SECRET='your-service-principal-secret'"
-  echo "  export CENTRAL_SUBSCRIPTION_ID='your-central-subscription-id'"
-  echo "  ./deploy-multi.sh"
+  echo "  export HUB_SUBSCRIPTION_ID='your-hub-subscription-id'"
+  echo "  ./deploy-hub.sh"
   exit 1
 fi
 
@@ -34,25 +34,25 @@ if [ -z "$ACR_APPLICATION_ID" ] || [ -z "$ACR_CLIENT_SECRET" ]; then
   exit 1
 fi
 
-if [ -z "$CENTRAL_SUB" ]; then
-  echo "ERROR: CENTRAL_SUBSCRIPTION_ID environment variable not set"
+if [ -z "$HUB_SUB" ]; then
+  echo "ERROR: HUB_SUBSCRIPTION_ID environment variable not set"
   exit 1
 fi
 
-echo "Qualys Multi-Subscription Scanner"
-echo "=================================="
-echo "Central Subscription: $CENTRAL_SUB"
+echo "Qualys Hub Deployment"
+echo "====================="
+echo "Hub Subscription: $HUB_SUB"
 echo "Resource Group: $RG"
 echo "Location: $LOCATION"
 echo "Qualys Gateway: $QUALYS_GATEWAY_URL"
 echo ""
 
-echo "[1/2] Deploying central hub..."
-az account set --subscription "$CENTRAL_SUB"
+echo "[1/2] Deploying hub resources..."
+az account set --subscription "$HUB_SUB"
 
 DEPLOYMENT_OUTPUT=$(az deployment sub create \
   --location "$LOCATION" \
-  --template-file infrastructure/central.bicep \
+  --template-file infrastructure/main.bicep \
   --parameters location="$LOCATION" \
   --parameters resourceGroupName="$RG" \
   --parameters qualysGatewayUrl="$QUALYS_GATEWAY_URL" \
@@ -63,7 +63,7 @@ DEPLOYMENT_OUTPUT=$(az deployment sub create \
   --output json)
 
 if [ $? -ne 0 ]; then
-  echo "ERROR: Central hub deployment failed"
+  echo "ERROR: Hub deployment failed"
   exit 1
 fi
 
@@ -96,12 +96,12 @@ fi
 cd ..
 
 echo ""
-echo "Deployment Complete"
-echo "==================="
+echo "Hub Deployment Complete"
+echo "======================="
 echo "Function App: $FUNCTION_APP"
 echo "Outputs saved to: $OUTPUTS_FILE"
 echo ""
 echo "Add spoke subscriptions:"
 echo "  export SPOKE_SUBSCRIPTION_ID='<subscription-id>'"
-echo "  ./add-spoke.sh"
+echo "  ./deploy-spoke.sh"
 echo ""

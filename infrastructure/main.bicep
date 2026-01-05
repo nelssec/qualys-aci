@@ -89,3 +89,7 @@ output keyVaultName string = resources.outputs.keyVaultName
 output appInsightsName string = resources.outputs.appInsightsName
 output functionAppPrincipalId string = resources.outputs.functionAppPrincipalId
 output resourceGroupName string = rg.name
+output eventHubNamespace string = resources.outputs.eventHubNamespace
+output diagnosticsSendConnectionString string = resources.outputs.diagnosticsSendConnectionString
+output centralSubscriptionId string = subscription().subscriptionId
+output containerReaderRoleId string = containerReaderRole.id

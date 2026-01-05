@@ -1,11 +1,9 @@
-.PHONY: deploy deploy-multi clean clean-all create-sp delete-sp check-prereqs help status logs test-scan
+.PHONY: deploy deploy-hub deploy-spoke clean clean-all create-sp delete-sp check-prereqs help status logs test-scan
 
-# Configuration (no defaults for required auth)
 RESOURCE_GROUP ?= qualys-scanner-rg
 LOCATION ?= eastus
 SP_NAME ?= qualys-acr-scanner
 
-# Map POD names to gateway URLs
 define get_gateway_url
 $(if $(filter US1,$(1)),https://gateway.qg1.apps.qualys.com,\
 $(if $(filter US2,$(1)),https://gateway.qg2.apps.qualys.com,\
@@ -69,7 +67,6 @@ endif
 	@echo "Qualys POD: $(QUALYS_POD)"
 	@echo "Qualys Gateway: $(QUALYS_GATEWAY_URL)"
 	@echo ""
-	@# Check/create Service Principal
 	@if [ -z "$(ACR_APPLICATION_ID)" ] || [ -z "$(ACR_CLIENT_SECRET)" ]; then \
 		if [ -f .sp-credentials.json ]; then \
 			echo "Using existing Service Principal from .sp-credentials.json"; \
@@ -97,12 +94,15 @@ endif
 	ACR_CLIENT_SECRET="$$ACR_CLIENT_SECRET" \
 	./deploy.sh
 
-deploy-multi: check-prereqs ## Deploy multi-subscription (hub-spoke) setup
+deploy-hub: check-prereqs ## Deploy hub only (for multi-subscription setup)
 ifndef QUALYS_ACCESS_TOKEN
 	$(error QUALYS_ACCESS_TOKEN is required)
 endif
 ifndef QUALYS_POD
 	$(error QUALYS_POD is required)
+endif
+ifndef HUB_SUBSCRIPTION_ID
+	$(error HUB_SUBSCRIPTION_ID is required. Usage: make deploy-hub QUALYS_POD=CA1 HUB_SUBSCRIPTION_ID=<id>)
 endif
 	$(eval QUALYS_GATEWAY_URL := $(call get_gateway_url,$(QUALYS_POD)))
 	@if [ -z "$(ACR_APPLICATION_ID)" ] || [ -z "$(ACR_CLIENT_SECRET)" ]; then \
@@ -123,15 +123,16 @@ endif
 	QUALYS_GATEWAY_URL="$(QUALYS_GATEWAY_URL)" \
 	RESOURCE_GROUP="$(RESOURCE_GROUP)" \
 	LOCATION="$(LOCATION)" \
+	HUB_SUBSCRIPTION_ID="$(HUB_SUBSCRIPTION_ID)" \
 	ACR_APPLICATION_ID="$$ACR_APPLICATION_ID" \
 	ACR_CLIENT_SECRET="$$ACR_CLIENT_SECRET" \
-	./deploy-multi.sh
+	./deploy-hub.sh
 
-add-spoke: ## Add a spoke subscription to the hub
+deploy-spoke: ## Deploy spoke subscription (requires hub deployed first)
 ifndef SPOKE_SUBSCRIPTION_ID
-	$(error SPOKE_SUBSCRIPTION_ID required. Usage: make add-spoke SPOKE_SUBSCRIPTION_ID=<id>)
+	$(error SPOKE_SUBSCRIPTION_ID required. Usage: make deploy-spoke SPOKE_SUBSCRIPTION_ID=<id>)
 endif
-	@./add-spoke.sh
+	@./deploy-spoke.sh
 
 clean: ## Clean local files only
 	@echo "Cleaning local files..."
