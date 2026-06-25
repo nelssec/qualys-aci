@@ -8,10 +8,17 @@ define get_gateway_url
 $(if $(filter US1,$(1)),https://gateway.qg1.apps.qualys.com,\
 $(if $(filter US2,$(1)),https://gateway.qg2.apps.qualys.com,\
 $(if $(filter US3,$(1)),https://gateway.qg3.apps.qualys.com,\
+$(if $(filter US4,$(1)),https://gateway.qg4.apps.qualys.com,\
+$(if $(filter GOV1,$(1)),https://gateway.gov1.qualys.us,\
 $(if $(filter EU1,$(1)),https://gateway.qg1.apps.qualys.eu,\
 $(if $(filter EU2,$(1)),https://gateway.qg2.apps.qualys.eu,\
+$(if $(filter EU3,$(1)),https://gateway.qg3.apps.qualys.it,\
+$(if $(filter IN1,$(1)),https://gateway.qg1.apps.qualys.in,\
 $(if $(filter CA1,$(1)),https://gateway.qg1.apps.qualys.ca,\
-$(if $(filter AU1,$(1)),https://gateway.qg1.apps.qualys.com.au,$(1))))))))
+$(if $(filter AE1,$(1)),https://gateway.qg1.apps.qualys.ae,\
+$(if $(filter UK1,$(1)),https://gateway.qg1.apps.qualys.co.uk,\
+$(if $(filter AU1,$(1)),https://gateway.qg1.apps.qualys.com.au,\
+$(if $(filter KSA1,$(1)),https://gateway.qg1.apps.qualysksa.com,$(1)))))))))))))))
 endef
 
 help: ## Show this help
@@ -26,7 +33,8 @@ help: ## Show this help
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  QUALYS_ACCESS_TOKEN  Required. Your Qualys Container Security API token"
-	@echo "  QUALYS_POD           Required. POD name: US1, US2, US3, EU1, EU2, CA1, AU1"
+	@echo "  QUALYS_POD           Platform POD: US1-US4, GOV1, EU1-EU3, IN1, CA1, AE1, UK1, AU1, KSA1"
+	@echo "                       (or set QUALYS_GATEWAY_URL directly)"
 	@echo "  RESOURCE_GROUP       Azure resource group name (default: qualys-scanner-rg)"
 	@echo "  LOCATION             Azure region (default: eastus)"
 
@@ -55,10 +63,10 @@ deploy: check-prereqs ## Deploy the scanner (auto-creates SP if needed)
 ifndef QUALYS_ACCESS_TOKEN
 	$(error QUALYS_ACCESS_TOKEN is required. Set it with: export QUALYS_ACCESS_TOKEN='your-token')
 endif
-ifndef QUALYS_POD
-	$(error QUALYS_POD is required. Usage: make deploy QUALYS_POD=CA1)
+ifeq ($(strip $(QUALYS_POD)$(QUALYS_GATEWAY_URL)),)
+	$(error Set QUALYS_POD (e.g. CA1) or QUALYS_GATEWAY_URL (e.g. the Qualys FedRAMP gateway for Azure Gov))
 endif
-	$(eval QUALYS_GATEWAY_URL := $(call get_gateway_url,$(QUALYS_POD)))
+	$(eval QUALYS_GATEWAY_URL := $(if $(QUALYS_GATEWAY_URL),$(QUALYS_GATEWAY_URL),$(call get_gateway_url,$(QUALYS_POD))))
 	@echo "Qualys Container Scanner for ACI/ACA"
 	@echo "====================================="
 	@echo "Subscription: $$(az account show --query name -o tsv)"
@@ -98,13 +106,13 @@ deploy-hub: check-prereqs ## Deploy hub only (for multi-subscription setup)
 ifndef QUALYS_ACCESS_TOKEN
 	$(error QUALYS_ACCESS_TOKEN is required)
 endif
-ifndef QUALYS_POD
-	$(error QUALYS_POD is required)
+ifeq ($(strip $(QUALYS_POD)$(QUALYS_GATEWAY_URL)),)
+	$(error Set QUALYS_POD (e.g. CA1) or QUALYS_GATEWAY_URL (e.g. the Qualys FedRAMP gateway for Azure Gov))
 endif
 ifndef HUB_SUBSCRIPTION_ID
 	$(error HUB_SUBSCRIPTION_ID is required. Usage: make deploy-hub QUALYS_POD=CA1 HUB_SUBSCRIPTION_ID=<id>)
 endif
-	$(eval QUALYS_GATEWAY_URL := $(call get_gateway_url,$(QUALYS_POD)))
+	$(eval QUALYS_GATEWAY_URL := $(if $(QUALYS_GATEWAY_URL),$(QUALYS_GATEWAY_URL),$(call get_gateway_url,$(QUALYS_POD))))
 	@if [ -z "$(ACR_APPLICATION_ID)" ] || [ -z "$(ACR_CLIENT_SECRET)" ]; then \
 		if [ -f .sp-credentials.json ]; then \
 			ACR_APPLICATION_ID=$$(cat .sp-credentials.json | grep -o '"appId"[^,]*' | cut -d'"' -f4); \

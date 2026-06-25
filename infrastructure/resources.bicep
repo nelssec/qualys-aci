@@ -21,6 +21,15 @@ var keyVaultName = 'qskv${uniqueString(resourceGroup().id)}'
 var eventHubNamespaceName = 'qscan-${uniqueString(resourceGroup().id)}'
 var serviceBusNamespaceName = 'qscan-sb-${uniqueString(resourceGroup().id)}'
 
+// Cloud-agnostic endpoints derived from the deployment cloud (Public, US Gov, China, ...).
+// environment() resolves from the cloud the deploying CLI/SDK is targeting.
+var storageEndpointSuffix = environment().suffixes.storage
+// Service Bus / Event Hub have no environment() suffix; derive from the storage suffix
+// (core.windows.net -> servicebus.windows.net, core.usgovcloudapi.net -> servicebus.usgovcloudapi.net).
+var serviceBusSuffix = 'servicebus.${replace(storageEndpointSuffix, 'core.', '')}'
+var resourceManagerEndpoint = environment().resourceManager
+var aadLoginEndpoint = environment().authentication.loginEndpoint
+
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var eventHubsDataReceiverRoleId = 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde'
@@ -172,7 +181,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
     siteConfig: {
       linuxFxVersion: 'Python|3.12'
       appSettings: concat([
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' }
+        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${storageEndpointSuffix}' }
         { name: 'AzureWebJobsStorage__accountName', value: storageAccountName }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
@@ -189,10 +198,13 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'SCAN_CACHE_HOURS', value: string(scanCacheHours) }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'ENABLE_ORYX_BUILD', value: 'true' }
-        { name: 'EVENTHUB__fullyQualifiedNamespace', value: '${eventHubNamespaceName}.servicebus.windows.net' }
+        { name: 'EVENTHUB__fullyQualifiedNamespace', value: '${eventHubNamespaceName}.${serviceBusSuffix}' }
         { name: 'EVENTHUB_NAME', value: activityLogHub.name }
-        { name: 'SERVICEBUS_FULLYQUALIFIEDNAMESPACE', value: '${serviceBusNamespaceName}.servicebus.windows.net' }
+        { name: 'SERVICEBUS_FULLYQUALIFIEDNAMESPACE', value: '${serviceBusNamespaceName}.${serviceBusSuffix}' }
         { name: 'SERVICEBUS_QUEUE_NAME', value: scanNotificationsQueue.name }
+        { name: 'AZURE_RESOURCE_MANAGER_ENDPOINT', value: resourceManagerEndpoint }
+        { name: 'AZURE_STORAGE_SUFFIX', value: storageEndpointSuffix }
+        { name: 'AZURE_AUTHORITY_HOST', value: aadLoginEndpoint }
       ], !empty(functionPackageUrl) ? [{ name: 'WEBSITE_RUN_FROM_PACKAGE', value: functionPackageUrl }] : [])
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'

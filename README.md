@@ -90,10 +90,19 @@ export ACR_CLIENT_SECRET="your-service-principal-secret"
 | US1 | `https://gateway.qg1.apps.qualys.com` |
 | US2 | `https://gateway.qg2.apps.qualys.com` |
 | US3 | `https://gateway.qg3.apps.qualys.com` |
+| US4 | `https://gateway.qg4.apps.qualys.com` |
+| GOV1 | `https://gateway.gov1.qualys.us` |
 | EU1 | `https://gateway.qg1.apps.qualys.eu` |
 | EU2 | `https://gateway.qg2.apps.qualys.eu` |
+| EU3 | `https://gateway.qg3.apps.qualys.it` |
+| IN1 | `https://gateway.qg1.apps.qualys.in` |
 | CA1 | `https://gateway.qg1.apps.qualys.ca` |
+| AE1 | `https://gateway.qg1.apps.qualys.ae` |
+| UK1 | `https://gateway.qg1.apps.qualys.co.uk` |
 | AU1 | `https://gateway.qg1.apps.qualys.com.au` |
+| KSA1 | `https://gateway.qg1.apps.qualysksa.com` |
+
+Identify the platform that hosts your subscription at [Qualys Platform Identification](https://www.qualys.com/platform-identification).
 
 ### ACR Connector Naming
 
@@ -102,6 +111,43 @@ The ACR connector in Qualys is automatically named: `acr-{subscription_short}`
 Example: `acr-d8ee7e92`
 
 One connector covers all ACRs in the subscription (regardless of region).
+
+## Azure Government and Sovereign Clouds
+
+The Bicep templates and function code are cloud-agnostic. Azure endpoints for
+storage, Event Hub, Service Bus, Key Vault, Azure Container Registry, and Azure
+Resource Manager are resolved at deploy time from the cloud the Azure CLI
+targets, using the Bicep `environment()` function. The function app reads these
+endpoints from its app settings. ACR images are recognized in each cloud:
+`.azurecr.io` (Public), `.azurecr.us` (US Government), and `.azurecr.cn` (China).
+
+The Qualys platform is independent of the Azure cloud. Set `QUALYS_POD` (or
+`QUALYS_GATEWAY_URL`) to the platform that hosts your Qualys subscription. This
+can be a commercial platform (US1 through US4, EU, CA1, and others) or the
+Qualys Government platform (GOV1). Identify your platform at
+[Qualys Platform Identification](https://www.qualys.com/platform-identification).
+
+To deploy into Azure US Government:
+
+```bash
+# 1. Target the Azure Government cloud and sign in
+az cloud set --name AzureUSGovernment
+az login
+
+# 2. Deploy to a Government region, using your Qualys platform
+export QUALYS_ACCESS_TOKEN='your-qualys-token'
+make deploy QUALYS_POD=GOV1 LOCATION=usgovvirginia
+```
+
+Notes:
+- `LOCATION` defaults to `eastus`. Set a Government region such as
+  `usgovvirginia` or `usgovtexas`.
+- `QUALYS_POD` accepts any platform in the gateway table, including GOV1. For a
+  platform not listed, set `QUALYS_GATEWAY_URL` directly. When
+  `QUALYS_GATEWAY_URL` is set, `QUALYS_POD` is not required.
+- Run `az cloud set --name AzureUSGovernment` before any deploy or cleanup
+  command so the service principal and ARM deployments are created in the
+  Government tenant.
 
 ## Multi-Subscription Deployment
 

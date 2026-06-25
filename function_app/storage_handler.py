@@ -15,8 +15,10 @@ class StorageHandler:
             raise ValueError('STORAGE_ACCOUNT_NAME environment variable required')
 
         credential = DefaultAzureCredential()
-        account_url = f"https://{account_name}.blob.core.windows.net"
-        table_url = f"https://{account_name}.table.core.windows.net"
+        # Storage suffix varies by cloud (core.windows.net, core.usgovcloudapi.net, ...).
+        suffix = os.environ.get('AZURE_STORAGE_SUFFIX', 'core.windows.net')
+        account_url = f"https://{account_name}.blob.{suffix}"
+        table_url = f"https://{account_name}.table.{suffix}"
 
         self.blob_service = BlobServiceClient(account_url, credential=credential)
         self.table_service = TableServiceClient(table_url, credential=credential)

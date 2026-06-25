@@ -13,6 +13,9 @@
     "ACR_CLIENT_SECRET": "<service-principal-secret>",
     "SCAN_CACHE_HOURS": "24",
     "SERVICEBUS_FULLYQUALIFIEDNAMESPACE": "<namespace>.servicebus.windows.net",
-    "SERVICEBUS_QUEUE_NAME": "scan-notifications"
+    "SERVICEBUS_QUEUE_NAME": "scan-notifications",
+    "AZURE_RESOURCE_MANAGER_ENDPOINT": "https://management.azure.com",
+    "AZURE_STORAGE_SUFFIX": "core.windows.net",
+    "AZURE_AUTHORITY_HOST": "https://login.microsoftonline.com"
   }
 }

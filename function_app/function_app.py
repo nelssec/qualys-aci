@@ -42,9 +42,14 @@ def fetch_container_images(subscription_id: str, resource_group: str,
         from azure.identity import DefaultAzureCredential
         credential = DefaultAzureCredential()
 
+        # ARM endpoint/scope vary by cloud (Public, US Gov, China). Default to public.
+        arm_endpoint = os.environ.get('AZURE_RESOURCE_MANAGER_ENDPOINT', 'https://management.azure.com').rstrip('/')
+        arm_scope = f"{arm_endpoint}/.default"
+
         if container_type == 'ACI':
             from azure.mgmt.containerinstance import ContainerInstanceManagementClient
-            client = ContainerInstanceManagementClient(credential, subscription_id)
+            client = ContainerInstanceManagementClient(
+                credential, subscription_id, base_url=arm_endpoint, credential_scopes=[arm_scope])
             container_group = client.container_groups.get(resource_group, container_name)
             for container in container_group.containers:
                 if container.image:
@@ -52,7 +57,8 @@ def fetch_container_images(subscription_id: str, resource_group: str,
 
         elif container_type == 'ACA':
             from azure.mgmt.appcontainers import ContainerAppsAPIClient
-            client = ContainerAppsAPIClient(credential, subscription_id)
+            client = ContainerAppsAPIClient(
+                credential, subscription_id, base_url=arm_endpoint, credential_scopes=[arm_scope])
             container_app = client.container_apps.get(resource_group, container_name)
             if container_app.template and container_app.template.containers:
                 for container in container_app.template.containers:
@@ -66,7 +72,9 @@ def fetch_container_images(subscription_id: str, resource_group: str,
 
 
 def is_acr_image(registry: str) -> bool:
-    return registry.endswith('.azurecr.io')
+    # ACR login server suffix varies by cloud: .azurecr.io (Public),
+    # .azurecr.us (US Gov), .azurecr.cn (China).
+    return registry.endswith(('.azurecr.io', '.azurecr.us', '.azurecr.cn'))
 
 
 def process_activity_log_record(record: dict):
