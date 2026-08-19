@@ -7,6 +7,9 @@ QUALYS_API_TOKEN="${QUALYS_API_TOKEN:-}"
 QUALYS_GATEWAY_URL="${QUALYS_GATEWAY_URL:-https://gateway.qg2.apps.qualys.com}"
 ACR_APPLICATION_ID="${ACR_APPLICATION_ID:-}"
 ACR_CLIENT_SECRET="${ACR_CLIENT_SECRET:-}"
+ENABLE_PRIVATE_NETWORKING="${ENABLE_PRIVATE_NETWORKING:-false}"
+FUNCTION_SUBNET_ID="${FUNCTION_SUBNET_ID:-}"
+PRIVATE_ENDPOINT_SUBNET_ID="${PRIVATE_ENDPOINT_SUBNET_ID:-}"
 
 if [ -z "$QUALYS_API_TOKEN" ]; then
   echo "ERROR: QUALYS_API_TOKEN environment variable not set"
@@ -60,6 +63,18 @@ elif [ "$RG_STATE" != "NotFound" ]; then
   fi
 fi
 
+PRIVATE_PARAMS=()
+if [ "$ENABLE_PRIVATE_NETWORKING" == "true" ]; then
+  if [ -z "$FUNCTION_SUBNET_ID" ] || [ -z "$PRIVATE_ENDPOINT_SUBNET_ID" ]; then
+    echo "ERROR: ENABLE_PRIVATE_NETWORKING=true requires FUNCTION_SUBNET_ID and PRIVATE_ENDPOINT_SUBNET_ID"
+    exit 1
+  fi
+  echo "Private networking: enabled"
+  PRIVATE_PARAMS+=(--parameters enablePrivateNetworking=true)
+  PRIVATE_PARAMS+=(--parameters functionSubnetId="$FUNCTION_SUBNET_ID")
+  PRIVATE_PARAMS+=(--parameters privateEndpointSubnetId="$PRIVATE_ENDPOINT_SUBNET_ID")
+fi
+
 echo ""
 echo "[1/2] Deploying infrastructure..."
 az deployment sub create \
@@ -71,6 +86,7 @@ az deployment sub create \
   --parameters qualysApiToken="$QUALYS_API_TOKEN" \
   --parameters acrApplicationId="$ACR_APPLICATION_ID" \
   --parameters acrClientSecret="$ACR_CLIENT_SECRET" \
+  "${PRIVATE_PARAMS[@]}" \
   --output none
 
 if [ $? -ne 0 ]; then

@@ -11,6 +11,10 @@ param acrClientSecret string
 param scanCacheHours int = 24
 param functionAppSku string = 'Y1'
 param functionPackageUrl string = ''
+param enablePrivateNetworking bool = false
+param functionSubnetId string = ''
+param privateEndpointSubnetId string = ''
+param privateDnsZoneIds object = {}
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
@@ -29,6 +33,10 @@ module resources 'resources.bicep' = {
     scanCacheHours: scanCacheHours
     functionAppSku: functionAppSku
     functionPackageUrl: functionPackageUrl
+    enablePrivateNetworking: enablePrivateNetworking
+    functionSubnetId: functionSubnetId
+    privateEndpointSubnetId: privateEndpointSubnetId
+    privateDnsZoneIds: privateDnsZoneIds
   }
 }
 

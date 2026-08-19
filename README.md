@@ -149,6 +149,64 @@ Notes:
   command so the service principal and ARM deployments are created in the
   Government tenant.
 
+## Private Networking
+
+By default the Function's supporting resources (Storage, Key Vault, Event Hub,
+Service Bus) are deployed with public network access, and the Function runs on
+the Consumption plan. This is not required. Set `enablePrivateNetworking=true`
+to VNet-integrate the Function, add private endpoints, and disable public access
+on those resources.
+
+When enabled, the deployment:
+- Runs the Function on an Elastic Premium plan (Consumption cannot VNet-integrate;
+  a `Y1` selection is upgraded to `EP1`).
+- Provisions Event Hub and Service Bus at the Standard tier (Basic does not
+  support private endpoints).
+- Regional VNet-integrates the Function into `functionSubnetId` and routes all
+  outbound traffic through the VNet.
+- Creates private endpoints for Storage (blob, file, queue, table), Key Vault,
+  Event Hub, and Service Bus in `privateEndpointSubnetId`.
+- Sets public network access to Disabled on Storage, Key Vault, Event Hub, and
+  Service Bus.
+
+Bring your own subnets and use your existing private DNS:
+
+```bash
+export ENABLE_PRIVATE_NETWORKING=true
+export FUNCTION_SUBNET_ID='/subscriptions/.../subnets/functions'          # delegated to Microsoft.Web/serverFarms
+export PRIVATE_ENDPOINT_SUBNET_ID='/subscriptions/.../subnets/endpoints'
+
+make deploy QUALYS_POD=US2
+```
+
+DNS resolution for the private endpoints is left to your central resolver or
+Azure Policy by default. To have the template register records in existing
+zones, pass `privateDnsZoneIds` (via `main.bicepparam` or a direct
+`az deployment` call), keyed by sub-resource:
+
+```bicep
+param privateDnsZoneIds = {
+  blob: '/subscriptions/.../privateDnsZones/privatelink.blob.core.windows.net'
+  file: '/subscriptions/.../privateDnsZones/privatelink.file.core.windows.net'
+  queue: '/subscriptions/.../privateDnsZones/privatelink.queue.core.windows.net'
+  table: '/subscriptions/.../privateDnsZones/privatelink.table.core.windows.net'
+  vault: '/subscriptions/.../privateDnsZones/privatelink.vaultcore.azure.net'
+  servicebus: '/subscriptions/.../privateDnsZones/privatelink.servicebus.windows.net'
+}
+```
+
+Notes:
+- Zone names are cloud-specific. In Azure Government use the
+  `privatelink.*.usgovcloudapi.net` equivalents.
+- The Function reads ACI/ACA container definitions through Azure Resource
+  Manager (control plane), so scanning private ACA/ACR deployments does not
+  require the app to reach their data plane.
+- Scanning by Qualys Cloud Platform still requires the registry to be reachable
+  from Qualys. A registry with no path from Qualys needs the Qualys Registry
+  Sensor deployed inside your network; that sensor is not part of this template.
+- Application Insights ingestion remains public unless you front it with Azure
+  Monitor Private Link Scope (AMPLS), which is out of scope here.
+
 ## Multi-Subscription Deployment
 
 Deploy to a central subscription and add spoke subscriptions:
